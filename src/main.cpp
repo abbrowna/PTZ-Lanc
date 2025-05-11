@@ -50,6 +50,61 @@ int exp_f = 8; //3.7
 int exp_s = 3; //1/50
 int exp_g = 17; //17
 
+// --- Stepper state for PAN ---
+bool panStepperActive = false;
+unsigned long panLastStepTime = 0;
+unsigned long panStepInterval = 0;
+bool panStepState = false;
+bool panLastDirection = false;
+int panLastSpeed = 0;
+
+// --- Stepper state for TILT ---
+bool tiltStepperActive = false;
+unsigned long tiltLastStepTime = 0;
+unsigned long tiltStepInterval = 0;
+bool tiltStepState = false;
+bool tiltLastDirection = false;
+int tiltLastSpeed = 0;
+
+// --- Start/Stop functions for PAN ---
+void startPanStepper(bool direction, int speed) {
+    // Only restart if direction or speed changed, or not active
+    if (!panStepperActive || panLastDirection != direction || panLastSpeed != speed) {
+        digitalWrite(panEnablePin, LOW);
+        digitalWrite(panDirPin, direction);
+        panStepInterval = 20000 / speed; // adjust as needed
+        panStepperActive = true;
+        panLastStepTime = micros();
+        panLastDirection = direction;
+        panLastSpeed = speed;
+    }
+}
+void stopPanStepper() {
+    if (panStepperActive) {
+        digitalWrite(panEnablePin, HIGH);
+        panStepperActive = false;
+    }
+}
+
+// --- Start/Stop functions for TILT ---
+void startTiltStepper(bool direction, int speed) {
+    if (!tiltStepperActive || tiltLastDirection != direction || tiltLastSpeed != speed) {
+        digitalWrite(tiltEnablePin, LOW);
+        digitalWrite(tiltDirPin, direction);
+        tiltStepInterval = 20000 / (speedRatio * speed); // adjust as needed
+        tiltStepperActive = true;
+        tiltLastStepTime = micros();
+        tiltLastDirection = direction;
+        tiltLastSpeed = speed;
+    }
+}
+void stopTiltStepper() {
+    if (tiltStepperActive) {
+        digitalWrite(tiltEnablePin, HIGH);
+        tiltStepperActive = false;
+    }
+}
+
 enum CameraCommands {
     ZOOM_1 = 1,
     ZOOM_2 = 2,
@@ -106,23 +161,6 @@ void lancMacro(const LancCommand* commands, size_t length) {
     }
 }
 
-// Stepper motor control function
-void moveStepper(int enablePin, int dirPin, int stepPin, bool direction, int speed) {
-  digitalWrite(enablePin, LOW);
-  timeout_flag = 0;
-  digitalWrite(dirPin, direction);
-  digitalWrite(stepPin, HIGH);
-  if(enablePin == tiltEnablePin){
-    delayMicroseconds(20000/(speedRatio*speed));
-  }
-  else{
-    delayMicroseconds(20000/speed);
-  }
-  digitalWrite(stepPin, LOW);
-  delayMicroseconds(2);
-  lastpan = millis();
-}
-
 void handleRoot(WiFiClient client) {
   client.println("HTTP/1.1 200 OK");
   client.println("Content-type:text/html");
@@ -133,89 +171,58 @@ void handleRoot(WiFiClient client) {
   client.print(index_html_part4);
 }
 
-void handleCommand(WiFiClient client, String request) {
-  Serial.println("Handling command...");
+void handleDirection(WiFiClient client, String request) {
+  Serial.println("Handling direction change...");
   Serial.print("Request: ");
   Serial.println(request);
 
-  // Read the request body
-  String body = "";
-  while (client.available()) {
-    char c = client.read();
-    body += c;
+  if (request.indexOf("GET /direction/up/on") >= 0) {
+    up_arrow = true;
+    Serial.println("Up arrow turned ON");
+  } else if (request.indexOf("GET /direction/up/off") >= 0) {
+    up_arrow = false;
+    Serial.println("Up arrow turned OFF");
+  } else if (request.indexOf("GET /direction/down/on") >= 0) {
+    down_arrow = true;
+    Serial.println("Down arrow turned ON");
+  } else if (request.indexOf("GET /direction/down/off") >= 0) {
+    down_arrow = false;
+    Serial.println("Down arrow turned OFF");
+  } else if (request.indexOf("GET /direction/left/on") >= 0) {
+    left_arrow = true;
+    Serial.println("Left arrow turned ON");
+  } else if (request.indexOf("GET /direction/left/off") >= 0) {
+    left_arrow = false;
+    Serial.println("Left arrow turned OFF");
+  } else if (request.indexOf("GET /direction/right/on") >= 0) {
+    right_arrow = true;
+    Serial.println("Right arrow turned ON");
+  } else if (request.indexOf("GET /direction/right/off") >= 0) {
+    right_arrow = false;
+    Serial.println("Right arrow turned OFF");
   }
-  Serial.print("Body: ");
-  Serial.println(body);
 
-  int jsonStart = body.indexOf('{');
-  int jsonEnd = body.indexOf('}');
-  if (jsonStart >= 0 && jsonEnd >= 0) {
-    String json = body.substring(jsonStart, jsonEnd + 1);
-    Serial.print("JSON: ");
-    Serial.println(json);
-
-    bool state = json.indexOf("\"state\":true") >= 0;
-
-    if (json.indexOf("\"direction\":\"up\"") >= 0) {
-      up_arrow = state;
-      Serial.println("Up arrow state changed");
-      Serial.print("up_arrow: ");
-      Serial.println(up_arrow);
-    } else if (json.indexOf("\"direction\":\"down\"") >= 0) {
-      down_arrow = state;
-      Serial.println("Down arrow state changed");
-      Serial.print("down_arrow: ");
-      Serial.println(down_arrow);
-    } else if (json.indexOf("\"direction\":\"left\"") >= 0) {
-      left_arrow = state;
-      Serial.println("Left arrow state changed");
-      Serial.print("left_arrow: ");
-      Serial.println(left_arrow);
-    } else if (json.indexOf("\"direction\":\"right\"") >= 0) {
-      right_arrow = state;
-      Serial.println("Right arrow state changed");
-      Serial.print("right_arrow: ");
-      Serial.println(right_arrow);
-    }
-  }
   client.println("HTTP/1.1 200 OK");
   client.println("Content-type:application/json");
   client.println();
   client.println("{\"status\":\"ok\"}");
 }
 
-// Update the handleCameraCommand function to properly parse the camera_command value
 void handleCameraCommand(WiFiClient client, String request) {
   Serial.println("Handling camera command...");
   Serial.print("Request: ");
   Serial.println(request);
 
-  // Read the request body
-  String body = "";
-  while (client.available()) {
-    char c = client.read();
-    body += c;
+  if (request.indexOf("GET /camera_command/") >= 0) {
+    int commandStart = request.indexOf("/camera_command/") + 16;
+    int commandEnd = request.indexOf(' ', commandStart);
+    String commandStr = request.substring(commandStart, commandEnd);
+    camera_command = commandStr.toInt();
+    Serial.println("Camera command updated");
+    Serial.print("camera_command: ");
+    Serial.println(camera_command);
   }
-  Serial.print("Body: ");
-  Serial.println(body);
 
-  int jsonStart = body.indexOf('{');
-  int jsonEnd = body.indexOf('}');
-  if (jsonStart >= 0 && jsonEnd >= 0) {
-    String json = body.substring(jsonStart, jsonEnd + 1);
-    Serial.print("JSON: ");
-    Serial.println(json);
-
-    int commandStart = json.indexOf("\"camera_command\":\"") + 18;
-    int commandEnd = json.indexOf('\"', commandStart);
-    if (commandStart >= 0 && commandEnd >= 0) {
-      String commandStr = json.substring(commandStart, commandEnd);
-      camera_command = commandStr.toInt();
-      Serial.println("Camera command received");
-      Serial.print("camera_command: ");
-      Serial.println(camera_command);
-    }
-  }
   client.println("HTTP/1.1 200 OK");
   client.println("Content-type:application/json");
   client.println();
@@ -326,9 +333,9 @@ void loop() {
         request += c;
         if (c == '\n') {
           if (currentLine.length() == 0) {
-            if (request.indexOf("POST /command") >= 0) {
-              handleCommand(client, request);
-            } else if (request.indexOf("POST /camera_command") >= 0) {
+            if (request.indexOf("GET /direction") >= 0) {
+              handleDirection(client, request);
+            } else if (request.indexOf("GET /camera_command") >= 0) {
               handleCameraCommand(client, request);
             } else if (request.indexOf("GET /status") >= 0) {
               handleStatus(client);
@@ -380,17 +387,19 @@ void loop() {
       exp_g++;
     }
     else if (camera_command == PAN_TILT_SLOW){
-      moveStepper(tiltEnablePin, tiltDirPin, tiltStepPin, true, 1); // Tilt down slow
+      startTiltStepper(true, 1); // Tilt up slow
     }
     else if (camera_command == PAN_TILT_MEDIUM){
-      moveStepper(tiltEnablePin, tiltDirPin, tiltStepPin, true, 2); // Tilt down medium
+      startTiltStepper(true, 2); // Tilt up medium
     }
     else if (camera_command == PAN_TILT_FAST){
-      moveStepper(tiltEnablePin, tiltDirPin, tiltStepPin, true, 3); // Tilt down fast
+      startTiltStepper(true, 3); // Tilt up fast
     }
     if(camera_command>8 && camera_command<13){
       up_arrow = false;
     }
+  } else {
+    stopTiltStepper();
   }
 
   /*******  DOWN ARROW **********/
@@ -425,17 +434,19 @@ void loop() {
       exp_g--;
     }
     else if (camera_command == PAN_TILT_SLOW){
-      moveStepper(tiltEnablePin, tiltDirPin, tiltStepPin, false, 1); // Tilt down slow
+      startTiltStepper(false, 1); // Tilt down slow
     }
     else if (camera_command == PAN_TILT_MEDIUM){
-      moveStepper(tiltEnablePin, tiltDirPin, tiltStepPin, false, 2); // Tilt down medium
+      startTiltStepper(false, 2); // Tilt down medium
     }
     else if (camera_command == PAN_TILT_FAST){
-      moveStepper(tiltEnablePin, tiltDirPin, tiltStepPin, false, 3); // Tilt down fast
+      startTiltStepper(false, 3); // Tilt down fast
     }
     if(camera_command>8 && camera_command<13){
       down_arrow = false;
     }
+  } else {
+    stopTiltStepper();
   }
 
   /*******  RIGHT ARROW **********/
@@ -462,20 +473,19 @@ void loop() {
       exp_g++;
     }
     else if(camera_command == PAN_TILT_SLOW){
-      //Pan the camera
-      moveStepper(panEnablePin, panDirPin, panStepPin, false, 1); // Pan right
+      startPanStepper(false, 1); // Pan right slow
     }
     else if(camera_command == PAN_TILT_MEDIUM){
-      //Pan the camera
-      moveStepper(panEnablePin, panDirPin, panStepPin, false, 2); // Pan right
+      startPanStepper(false, 2); // Pan right medium
     }
     else if(camera_command == PAN_TILT_FAST){
-      //Pan the camera
-      moveStepper(panEnablePin, panDirPin, panStepPin, false, 3); // Pan right
+      startPanStepper(false, 3); // Pan right fast
     }
     if(camera_command>8 && camera_command<13){
       right_arrow = false;
     }
+  } else {
+    stopPanStepper();
   }
 
   /*******  LEFT ARROW **********/
@@ -502,20 +512,19 @@ void loop() {
       exp_g--;
     }
     else if(camera_command == PAN_TILT_SLOW){
-      //Pan the camera
-      moveStepper(panEnablePin, panDirPin, panStepPin, true, 1); // Pan left slow
+      startPanStepper(true, 1); // Pan left slow
     }
     else if(camera_command == PAN_TILT_MEDIUM){
-      //Pan the camera
-      moveStepper(panEnablePin, panDirPin, panStepPin, true, 2); // Pan left medium
+      startPanStepper(true, 2); // Pan left medium
     }
     else if(camera_command == PAN_TILT_FAST){
-      //Pan the camera
-      moveStepper(panEnablePin, panDirPin, panStepPin, true, 3); // Pan left fast
+      startPanStepper(true, 3); // Pan left fast
     }
     if(camera_command>8 && camera_command<13){
       left_arrow = false;
     }
+  } else {
+    stopPanStepper();
   }
 
   /*******  OTHER STUFF TO DO IN VOID LOOP **********/
@@ -523,12 +532,32 @@ void loop() {
 
   if (millis()-lastpan >= motor_timeout && !timeout_flag){
     //Disable the pan stepper motor. 
-    digitalWrite(panEnablePin, 1);
+    stopPanStepper();
     Serial.println("Stepper has been disabled");
     timeout_flag = 1;
   }
-  //delay(200);
- 
+
+  // PAN STEPPER PULSE GENERATION
+  if (panStepperActive) {
+      unsigned long now = micros();
+      if (now - panLastStepTime >= panStepInterval) {
+          panLastStepTime += panStepInterval;
+          digitalWrite(panStepPin, HIGH);
+          delayMicroseconds(2);
+          digitalWrite(panStepPin, LOW);
+      }
+  }
+
+  // TILT STEPPER PULSE GENERATION
+  if (tiltStepperActive) {
+      unsigned long now = micros();
+      if (now - tiltLastStepTime >= tiltStepInterval) {
+          tiltLastStepTime += tiltStepInterval;
+          digitalWrite(tiltStepPin, HIGH);
+          delayMicroseconds(2);
+          digitalWrite(tiltStepPin, LOW);
+      }
+  }
 }
 
 

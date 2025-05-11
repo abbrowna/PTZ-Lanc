@@ -141,38 +141,22 @@ const char index_html_part1[] PROGMEM = R"rawliteral(
 const char index_html_part2[] PROGMEM = R"rawliteral(
     <script>
         console.log("JavaScript Loaded");
-        let commandState = {
-            up: false,
-            down: false,
-            left: false,
-            right: false
-        };
 
-        function startCommand(direction) {
-            commandState[direction] = true;
-            sendCommand(direction, true);
-        }
-
-        function stopCommand(direction) {
-            commandState[direction] = false;
-            sendCommand(direction, false);
-        }
-
-        function sendCommand(direction, state) {
-            fetch('/command', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ direction: direction, state: state })
-            });
+        function sendDirectionCommand(direction, state) {
+            const endpoint = `/direction/${direction}/${state ? 'on' : 'off'}`;
+            fetch(endpoint)
+                .then(response => response.json())
+                .then(data => console.log(data))
+                .catch(error => console.error('Error sending direction command:', error));
         }
 
         function sendCameraCommand() {
             const command = document.getElementById('camera_command').value;
-            fetch('/camera_command', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ camera_command: command })
-            });
+            const endpoint = `/camera_command/${command}`;
+            fetch(endpoint)
+                .then(response => response.json())
+                .then(data => console.log(data))
+                .catch(error => console.error('Error sending camera command:', error));
         }
 
         function updateStatus() {
@@ -186,6 +170,27 @@ const char index_html_part2[] PROGMEM = R"rawliteral(
                 })
                 .catch(error => console.error('Error fetching status:', error));
         }
+
+        document.getElementById('btn-up').addEventListener('mousedown', () => sendDirectionCommand('up', true));
+        document.getElementById('btn-up').addEventListener('mouseup', () => sendDirectionCommand('up', false));
+        document.getElementById('btn-down').addEventListener('mousedown', () => sendDirectionCommand('down', true));
+        document.getElementById('btn-down').addEventListener('mouseup', () => sendDirectionCommand('down', false));
+        document.getElementById('btn-left').addEventListener('mousedown', () => sendDirectionCommand('left', true));
+        document.getElementById('btn-left').addEventListener('mouseup', () => sendDirectionCommand('left', false));
+        document.getElementById('btn-right').addEventListener('mousedown', () => sendDirectionCommand('right', true));
+        document.getElementById('btn-right').addEventListener('mouseup', () => sendDirectionCommand('right', false));
+
+        document.getElementById('camera_command').addEventListener('change', sendCameraCommand);
+
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => {
+                document.getElementById('initialization-modal').classList.add('hidden');
+                document.querySelector('.container').style.display = 'block';
+            }, 5000); // Simulate 5 seconds for initialization
+        });
+
+        setInterval(updateStatus, 1000); // Update status every second
+    </script>
 )rawliteral";
 
 const char index_html_part3[] PROGMEM = R"rawliteral(
@@ -210,56 +215,10 @@ const char index_html_part3[] PROGMEM = R"rawliteral(
             ];
             return expSValues[index] || "Unknown";
         }
-
-
-        document.getElementById('btn-up').addEventListener('mousedown', () => startCommand('up'));
-        document.getElementById('btn-up').addEventListener('mouseup', () => stopCommand('up'));
-        document.getElementById('btn-up').addEventListener('mouseleave', () => stopCommand('up'));
-        document.getElementById('btn-up').addEventListener('touchstart', (event) => {
-            event.preventDefault(); // Prevent triggering mouse events
-            startCommand('up');
-        });
-        document.getElementById('btn-up').addEventListener('touchend', () => stopCommand('up'));
-
-        document.getElementById('btn-down').addEventListener('mousedown', () => startCommand('down'));
-        document.getElementById('btn-down').addEventListener('mouseup', () => stopCommand('down'));
-        document.getElementById('btn-down').addEventListener('mouseleave', () => stopCommand('down'));
-        document.getElementById('btn-down').addEventListener('touchstart', (event) => {
-            event.preventDefault();
-            startCommand('down');
-        });
-        document.getElementById('btn-down').addEventListener('touchend', () => stopCommand('down'));
-
-        document.getElementById('btn-left').addEventListener('mousedown', () => startCommand('left'));
-        document.getElementById('btn-left').addEventListener('mouseup', () => stopCommand('left'));
-        document.getElementById('btn-left').addEventListener('mouseleave', () => stopCommand('left'));
-        document.getElementById('btn-left').addEventListener('touchstart', (event) => {
-            event.preventDefault();
-            startCommand('left');
-        });
-        document.getElementById('btn-left').addEventListener('touchend', () => stopCommand('left'));
-
-        document.getElementById('btn-right').addEventListener('mousedown', () => startCommand('right'));
-        document.getElementById('btn-right').addEventListener('mouseup', () => stopCommand('right'));
-        document.getElementById('btn-right').addEventListener('mouseleave', () => stopCommand('right'));
-        document.getElementById('btn-right').addEventListener('touchstart', (event) => {
-            event.preventDefault();
-            startCommand('right');
-        });
-        document.getElementById('btn-right').addEventListener('touchend', () => stopCommand('right'));
-
-        document.getElementById('camera_command').addEventListener('change', sendCameraCommand);
-
-        const keyState = {};
 )rawliteral";
 
 const char index_html_part4[] PROGMEM = R"rawliteral(
-        document.addEventListener('DOMContentLoaded', () => {
-            setTimeout(() => {
-                document.getElementById('initialization-modal').classList.add('hidden');
-                document.querySelector('.container').style.display = 'block';
-            }, 5000); // Simulate 5 seconds for initialization
-        });
+        const keyState = {};
 
         document.addEventListener('keydown', (event) => {
             if (keyState[event.code]) return; // Avoid multiple triggers while key is held
@@ -267,16 +226,16 @@ const char index_html_part4[] PROGMEM = R"rawliteral(
 
             switch (event.code) {
                 case 'ArrowUp':
-                    startCommand('up');
+                    sendDirectionCommand('up', true);
                     break;
                 case 'ArrowDown':
-                    startCommand('down');
+                    sendDirectionCommand('down', true);
                     break;
                 case 'ArrowLeft':
-                    startCommand('left');
+                    sendDirectionCommand('left', true);
                     break;
                 case 'ArrowRight':
-                    startCommand('right');
+                    sendDirectionCommand('right', true);
                     break;
             }
         });
@@ -287,16 +246,16 @@ const char index_html_part4[] PROGMEM = R"rawliteral(
 
             switch (event.code) {
                 case 'ArrowUp':
-                    stopCommand('up');
+                    sendDirectionCommand('up', false);
                     break;
                 case 'ArrowDown':
-                    stopCommand('down');
+                    sendDirectionCommand('down', false);
                     break;
                 case 'ArrowLeft':
-                    stopCommand('left');
+                    sendDirectionCommand('left', false);
                     break;
                 case 'ArrowRight':
-                    stopCommand('right');
+                    sendDirectionCommand('right', false);
                     break;
             }
         });
@@ -305,7 +264,7 @@ const char index_html_part4[] PROGMEM = R"rawliteral(
         window.addEventListener('blur', () => {
             for (const key in keyState) {
                 if (keyState[key]) {
-                    stopCommand(getDirectionFromKey(key));
+                    sendDirectionCommand(getDirectionFromKey(key), false);
                     keyState[key] = false;
                 }
             }
@@ -320,8 +279,6 @@ const char index_html_part4[] PROGMEM = R"rawliteral(
             }
             return null;
         }
-
-        setInterval(updateStatus, 1000); // Update status every second
     </script>
 </body>
 </html>

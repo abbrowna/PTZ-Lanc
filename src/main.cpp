@@ -56,7 +56,7 @@ unsigned long panLastStepTime = 0;
 unsigned long panStepInterval = 0;
 bool panStepState = false;
 bool panLastDirection = false;
-int panLastSpeed = 0;
+float panLastSpeed = 0;
 
 // --- Stepper state for TILT ---
 bool tiltStepperActive = false;
@@ -64,15 +64,15 @@ unsigned long tiltLastStepTime = 0;
 unsigned long tiltStepInterval = 0;
 bool tiltStepState = false;
 bool tiltLastDirection = false;
-int tiltLastSpeed = 0;
+float tiltLastSpeed = 0;
 
 // --- Start/Stop functions for PAN ---
-void startPanStepper(bool direction, int speed) {
-    // Only restart if direction or speed changed, or not active
+void startPanStepper(bool direction, float speed) {
+    speed = constrain(speed, 0.1, 4.0); // avoid divide by zero, clamp to 0.1..4
     if (!panStepperActive || panLastDirection != direction || panLastSpeed != speed) {
         digitalWrite(panEnablePin, LOW);
         digitalWrite(panDirPin, direction);
-        panStepInterval = 20000 / speed; // adjust as needed
+        panStepInterval = 20000.0 / speed; // microseconds per step
         panStepperActive = true;
         panLastStepTime = micros();
         panLastDirection = direction;
@@ -87,11 +87,12 @@ void stopPanStepper() {
 }
 
 // --- Start/Stop functions for TILT ---
-void startTiltStepper(bool direction, int speed) {
+void startTiltStepper(bool direction, float speed) {
+    speed = constrain(speed, 0.1, 4.0); // avoid divide by zero, clamp to 0.1..4
     if (!tiltStepperActive || tiltLastDirection != direction || tiltLastSpeed != speed) {
         digitalWrite(tiltEnablePin, LOW);
         digitalWrite(tiltDirPin, direction);
-        tiltStepInterval = 20000 / (speedRatio * speed); // adjust as needed
+        tiltStepInterval = 20000.0 / (speedRatio * speed); // microseconds per step
         tiltStepperActive = true;
         tiltLastStepTime = micros();
         tiltLastDirection = direction;
@@ -229,6 +230,58 @@ void handleCameraCommand(WiFiClient client, String request) {
   client.println("{\"status\":\"ok\"}");
 }
 
+void handleJoystick(WiFiClient client, String request) {
+    // Parse pan and tilt from /joystick?pan=X&tilt=Y (now as float)
+    float pan = 0, tilt = 0;
+    int panIdx = request.indexOf("pan=");
+    int tiltIdx = request.indexOf("tilt=");
+    if (panIdx >= 0) {
+        int end = request.indexOf('&', panIdx);
+        String panStr = (end > panIdx) ? request.substring(panIdx + 4, end) : request.substring(panIdx + 4);
+        pan = panStr.toFloat();
+    }
+    if (tiltIdx >= 0) {
+        int end = request.indexOf('&', tiltIdx);
+        String tiltStr = (end > tiltIdx) ? request.substring(tiltIdx + 5, end) : request.substring(tiltIdx + 5);
+        tilt = tiltStr.toFloat();
+    }
+    // Clamp to -4..4
+    pan = constrain(pan, -4.0, 4.0);
+    tilt = constrain(tilt, -4.0, 4.0);
+
+    // Map pan/tilt to direction and speed (use float speed)
+    if (pan > 0.05) {
+        startPanStepper(false, pan); // right, speed
+        right_arrow = true;
+        left_arrow = false;
+    } else if (pan < -0.05) {
+        startPanStepper(true, -pan); // left, speed
+        left_arrow = true;
+        right_arrow = false;
+    } else {
+        stopPanStepper();
+        left_arrow = false;
+        right_arrow = false;
+    }
+    if (tilt > 0.05) {
+        startTiltStepper(false, tilt); // down, speed
+        down_arrow = true;
+        up_arrow = false;
+    } else if (tilt < -0.05) {
+        startTiltStepper(true, -tilt); // up, speed
+        up_arrow = true;
+        down_arrow = false;
+    } else {
+        stopTiltStepper();
+        up_arrow = false;
+        down_arrow = false;
+    }
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-type:application/json");
+    client.println();
+    client.println("{\"status\":\"ok\"}");
+}
+
 void handleStatus(WiFiClient client) {
   String json = "{\"wb_k\":" + String(wb_k) + ",\"exp_f\":" + String(exp_f) + ",\"exp_s\":" + String(exp_s) + ",\"exp_g\":" + String(exp_g) + "}";
   client.println("HTTP/1.1 200 OK");
@@ -333,7 +386,9 @@ void loop() {
         request += c;
         if (c == '\n') {
           if (currentLine.length() == 0) {
-            if (request.indexOf("GET /direction") >= 0) {
+            if (request.indexOf("GET /joystick") >= 0) {
+              handleJoystick(client, request);
+            } else if (request.indexOf("GET /direction") >= 0) {
               handleDirection(client, request);
             } else if (request.indexOf("GET /camera_command") >= 0) {
               handleCameraCommand(client, request);

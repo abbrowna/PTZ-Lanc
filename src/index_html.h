@@ -128,6 +128,10 @@ const char index_html_part1[] PROGMEM = R"rawliteral(
             <button id="btn-right" style="grid-area: 2 / 3;">Right</button>
             <button id="btn-down" style="grid-area: 3 / 2;">Down</button>
         </div>
+        <div id="joystick-container" style="margin: 40px auto; width: 200px; height: 200px; position: relative;">
+            <canvas id="joystick" width="200" height="200" style="background: #e0e0e0; border-radius: 10px;"></canvas>
+            <div style="text-align:center;margin-top:8px;">Virtual Joystick</div>
+        </div>
         <div class="status">
             <h2>Status</h2>
             <p>White Balance : <span id="wb_k">0</span></p>
@@ -194,6 +198,7 @@ const char index_html_part2[] PROGMEM = R"rawliteral(
 )rawliteral";
 
 const char index_html_part3[] PROGMEM = R"rawliteral(
+    <script>
         function convertToKelvin(index) {
             const minKelvin = 2000;
             return minKelvin + (index * 100);
@@ -279,6 +284,109 @@ const char index_html_part4[] PROGMEM = R"rawliteral(
             }
             return null;
         }
+    </script>
+    <script>
+        const canvas = document.getElementById('joystick');
+        const ctx = canvas.getContext('2d');
+        const center = { x: 100, y: 100 };
+        let dragging = false;
+        let lastSent = { pan: 0, tilt: 0 };
+
+        function drawJoystick(pos) {
+            ctx.clearRect(0, 0, 200, 200);
+            // Draw grid
+            ctx.strokeStyle = '#bbb';
+            ctx.beginPath();
+            ctx.moveTo(100, 0); ctx.lineTo(100, 200);
+            ctx.moveTo(0, 100); ctx.lineTo(200, 100);
+            ctx.stroke();
+            // Draw center
+            ctx.beginPath();
+            ctx.arc(100, 100, 10, 0, 2 * Math.PI);
+            ctx.fillStyle = '#00bfff';
+            ctx.fill();
+            // Draw stick position
+            if (pos) {
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, 15, 0, 2 * Math.PI);
+                ctx.fillStyle = '#009acd';
+                ctx.fill();
+            }
+        }
+
+        drawJoystick();
+
+        function sendJoystickCommand(pan, tilt) {
+            // Only send if changed
+            if (lastSent.pan === pan && lastSent.tilt === tilt) return;
+            lastSent = { pan, tilt };
+            // Send as GET /joystick?pan=val&tilt=val
+            fetch(`/joystick?pan=${pan}&tilt=${tilt}`)
+                .then(r=>r.json()).catch(()=>{});
+        }
+
+        function stopJoystick() {
+            lastSent = { pan: 0, tilt: 0 };
+            fetch(`/joystick?pan=0&tilt=0`).then(r=>r.json()).catch(()=>{});
+        }
+
+        function getEventPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            let x, y;
+            if (e.touches) {
+                x = e.touches[0].clientX - rect.left;
+                y = e.touches[0].clientY - rect.top;
+            } else {
+                x = e.clientX - rect.left;
+                y = e.clientY - rect.top;
+            }
+            return { x: Math.max(0, Math.min(200, x)), y: Math.max(0, Math.min(200, y)) };
+        }
+
+        function handleMove(e) {
+            if (!dragging) return;
+            const pos = getEventPos(e);
+            drawJoystick(pos);
+            // Calculate offset from center, normalize to -100..100
+            const dx = pos.x - 100;
+            const dy = pos.y - 100;
+            // Map to -4..4 (speed), direction by sign
+            let pan = Math.max(-4, Math.min(4, dx / 25));
+            let tilt = Math.max(-4, Math.min(4, dy / 25));
+            sendJoystickCommand(pan, tilt);
+        }
+
+        canvas.addEventListener('mousedown', function(e) {
+            dragging = true;
+            handleMove(e);
+        });
+        canvas.addEventListener('mousemove', handleMove);
+        canvas.addEventListener('mouseup', function(e) {
+            dragging = false;
+            drawJoystick();
+            stopJoystick();
+        });
+        canvas.addEventListener('mouseleave', function(e) {
+            dragging = false;
+            drawJoystick();
+            stopJoystick();
+        });
+        // Touch support
+        canvas.addEventListener('touchstart', function(e) {
+            dragging = true;
+            handleMove(e);
+            e.preventDefault();
+        });
+        canvas.addEventListener('touchmove', function(e) {
+            handleMove(e);
+            e.preventDefault();
+        });
+        canvas.addEventListener('touchend', function(e) {
+            dragging = false;
+            drawJoystick();
+            stopJoystick();
+            e.preventDefault();
+        });
     </script>
 </body>
 </html>

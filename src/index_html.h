@@ -58,9 +58,9 @@ const char index_html_part1[] PROGMEM = R"rawliteral(
             color: white;
             font-size: 18px;
             cursor: pointer;
-            -webkit-user-select: none; /* Disable text selection on WebKit browsers */
-            -moz-user-select: none;    /* Disable text selection on Firefox */
-            -ms-user-select: none;     /* Disable text selection on Internet Explorer/Edge */
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
             user-select: none;  
         }
         .controls button:active {
@@ -93,6 +93,9 @@ const char index_html_part1[] PROGMEM = R"rawliteral(
         }
     </style>
 </head>
+)rawliteral";
+
+const char index_html_part2[] PROGMEM = R"rawliteral(
 <body>
     <div id="initialization-modal" class="modal">
         <div class="modal-content">
@@ -142,7 +145,7 @@ const char index_html_part1[] PROGMEM = R"rawliteral(
     </div>
 )rawliteral";
 
-const char index_html_part2[] PROGMEM = R"rawliteral(
+const char index_html_part3[] PROGMEM = R"rawliteral(
     <script>
         console.log("JavaScript Loaded");
 
@@ -175,29 +178,36 @@ const char index_html_part2[] PROGMEM = R"rawliteral(
                 .catch(error => console.error('Error fetching status:', error));
         }
 
-        document.getElementById('btn-up').addEventListener('mousedown', () => sendDirectionCommand('up', true));
-        document.getElementById('btn-up').addEventListener('mouseup', () => sendDirectionCommand('up', false));
-        document.getElementById('btn-down').addEventListener('mousedown', () => sendDirectionCommand('down', true));
-        document.getElementById('btn-down').addEventListener('mouseup', () => sendDirectionCommand('down', false));
-        document.getElementById('btn-left').addEventListener('mousedown', () => sendDirectionCommand('left', true));
-        document.getElementById('btn-left').addEventListener('mouseup', () => sendDirectionCommand('left', false));
-        document.getElementById('btn-right').addEventListener('mousedown', () => sendDirectionCommand('right', true));
-        document.getElementById('btn-right').addEventListener('mouseup', () => sendDirectionCommand('right', false));
-
-        document.getElementById('camera_command').addEventListener('change', sendCameraCommand);
-
-        document.addEventListener('DOMContentLoaded', () => {
-            setTimeout(() => {
-                document.getElementById('initialization-modal').classList.add('hidden');
-                document.querySelector('.container').style.display = 'block';
-            }, 5000); // Simulate 5 seconds for initialization
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('btn-up').addEventListener('mousedown', () => sendDirectionCommand('up', true));
+            document.getElementById('btn-up').addEventListener('mouseup', () => sendDirectionCommand('up', false));
+            document.getElementById('btn-down').addEventListener('mousedown', () => sendDirectionCommand('down', true));
+            document.getElementById('btn-down').addEventListener('mouseup', () => sendDirectionCommand('down', false));
+            document.getElementById('btn-left').addEventListener('mousedown', () => sendDirectionCommand('left', true));
+            document.getElementById('btn-left').addEventListener('mouseup', () => sendDirectionCommand('left', false));
+            document.getElementById('btn-right').addEventListener('mousedown', () => sendDirectionCommand('right', true));
+            document.getElementById('btn-right').addEventListener('mouseup', () => sendDirectionCommand('right', false));
+            document.getElementById('camera_command').addEventListener('change', sendCameraCommand);
         });
+
+        function pollInitStatus() {
+            fetch('/init_status')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.initialized) {
+                        document.getElementById('initialization-modal').classList.add('hidden');
+                        document.querySelector('.container').style.display = 'block';
+                    } else {
+                        setTimeout(pollInitStatus, 500); // poll again in 0.5s
+                    }
+                })
+                .catch(() => setTimeout(pollInitStatus, 1000)); // try again in 1s on error
+        }
+
+        document.addEventListener('DOMContentLoaded', pollInitStatus);
 
         setInterval(updateStatus, 1000); // Update status every second
     </script>
-)rawliteral";
-
-const char index_html_part3[] PROGMEM = R"rawliteral(
     <script>
         function convertToKelvin(index) {
             const minKelvin = 2000;
@@ -285,6 +295,9 @@ const char index_html_part4[] PROGMEM = R"rawliteral(
             return null;
         }
     </script>
+)rawliteral";
+
+const char index_html_part5[] PROGMEM = R"rawliteral(
     <script>
         const canvas = document.getElementById('joystick');
         const ctx = canvas.getContext('2d');
@@ -366,6 +379,9 @@ const char index_html_part4[] PROGMEM = R"rawliteral(
             drawJoystick();
             stopJoystick();
         });
+)rawliteral";
+
+const char index_html_part6[] PROGMEM = R"rawliteral(
         canvas.addEventListener('mouseleave', function(e) {
             dragging = false;
             drawJoystick();

@@ -18,6 +18,7 @@ bool down_arrow;
 bool left_arrow;
 bool right_arrow;
 bool up_arrow = false;
+bool camera_initialized = false;
 
 #include <WiFiNINA.h>
 #include "lancCommands.h"
@@ -170,12 +171,12 @@ void handleRoot(WiFiClient client) {
   client.print(index_html_part2);
   client.print(index_html_part3);
   client.print(index_html_part4);
+  client.print(index_html_part5);
+  client.print(index_html_part6);
 }
 
 void handleDirection(WiFiClient client, String request) {
   Serial.println("Handling direction change...");
-  Serial.print("Request: ");
-  Serial.println(request);
 
   if (request.indexOf("GET /direction/up/on") >= 0) {
     up_arrow = true;
@@ -290,6 +291,15 @@ void handleStatus(WiFiClient client) {
   client.println(json);
 }
 
+void handleInitStatus(WiFiClient client) {
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-type:application/json");
+  client.println();
+  client.print("{\"initialized\":");
+  client.print(camera_initialized ? "true" : "false");
+  client.println("}");
+}
+
 void reconnectWiFi() {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("WiFi disconnected. Attempting to reconnect...");
@@ -331,6 +341,7 @@ void initializeCamera() {
   Serial.println("Setting default value for white balance");
   lancMacro(WB_default, sizeof(WB_default) / sizeof(LancCommand));
   Serial.println("Camera initialization complete.");
+  camera_initialized = true;
 }
 
 void setup() {
@@ -394,6 +405,8 @@ void loop() {
               handleCameraCommand(client, request);
             } else if (request.indexOf("GET /status") >= 0) {
               handleStatus(client);
+            } else if (request.indexOf("GET /init_status") >= 0) {
+              handleInitStatus(client);
             } else {
               handleRoot(client);
             }
@@ -453,8 +466,6 @@ void loop() {
     if(camera_command>8 && camera_command<13){
       up_arrow = false;
     }
-  } else {
-    stopTiltStepper();
   }
 
   /*******  DOWN ARROW **********/
@@ -500,8 +511,6 @@ void loop() {
     if(camera_command>8 && camera_command<13){
       down_arrow = false;
     }
-  } else {
-    stopTiltStepper();
   }
 
   /*******  RIGHT ARROW **********/
@@ -539,8 +548,6 @@ void loop() {
     if(camera_command>8 && camera_command<13){
       right_arrow = false;
     }
-  } else {
-    stopPanStepper();
   }
 
   /*******  LEFT ARROW **********/
@@ -578,10 +585,12 @@ void loop() {
     if(camera_command>8 && camera_command<13){
       left_arrow = false;
     }
-  } else {
-    stopPanStepper();
   }
-
+  if(!left_arrow && !right_arrow && !up_arrow && !down_arrow){
+    //If no arrow is pressed, stop the stepper motors
+    panStepperActive = false;
+    tiltStepperActive = true;
+  }
   /*******  OTHER STUFF TO DO IN VOID LOOP **********/
   
 
@@ -597,9 +606,10 @@ void loop() {
       unsigned long now = micros();
       if (now - panLastStepTime >= panStepInterval) {
           panLastStepTime += panStepInterval;
-          digitalWrite(panStepPin, HIGH);
-          delayMicroseconds(2);
-          digitalWrite(panStepPin, LOW);
+          panStepState = !panStepState;
+          digitalWrite(panStepPin, panStepState);
+          lastpan = millis(); // Reset the last pan time
+          timeout_flag = 0; // Reset the timeout flag
       }
   }
 
@@ -608,9 +618,8 @@ void loop() {
       unsigned long now = micros();
       if (now - tiltLastStepTime >= tiltStepInterval) {
           tiltLastStepTime += tiltStepInterval;
-          digitalWrite(tiltStepPin, HIGH);
-          delayMicroseconds(2);
-          digitalWrite(tiltStepPin, LOW);
+          tiltStepState = !tiltStepState;
+          digitalWrite(tiltStepPin, tiltStepState);
       }
   }
 }

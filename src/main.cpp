@@ -163,6 +163,28 @@ void lancMacro(const LancCommand* commands, size_t length) {
     }
 }
 
+void initializeCamera() {
+  Serial.println("Starting camera initialization...");
+  Serial.println("Starting exposure F Initialization");
+  lancMacro(Exp_F_init, sizeof(Exp_F_init) / sizeof(LancCommand));
+  Serial.println("Starting exposure Gain Initialization");
+  lancMacro(Exp_GAIN_init, sizeof(Exp_GAIN_init) / sizeof(LancCommand));
+  Serial.println("Starting exposure S Initialization");
+  lancMacro(Exp_S_init, sizeof(Exp_S_init) / sizeof(LancCommand));
+  Serial.println("Starting white balance Initialization");
+  lancMacro(WB_init, sizeof(WB_init) / sizeof(LancCommand));
+  Serial.println("Setting default value for exposure F");
+  lancMacro(Exp_F_default, sizeof(Exp_F_default) / sizeof(LancCommand));
+  Serial.println("Setting default value for exposure Gain");
+  lancMacro(Exp_GAIN_default, sizeof(Exp_GAIN_default) / sizeof(LancCommand));
+  Serial.println("Setting default value for exposure S");
+  lancMacro(Exp_S_default, sizeof(Exp_S_default) / sizeof(LancCommand));
+  Serial.println("Setting default value for white balance");
+  lancMacro(WB_default, sizeof(WB_default) / sizeof(LancCommand));
+  Serial.println("Camera initialization complete.");
+  camera_initialized = true;
+}
+
 void handleRoot(WiFiClient client) {
   client.println("HTTP/1.1 200 OK");
   client.println("Content-type:text/html");
@@ -331,27 +353,7 @@ void reconnectWiFi() {
   }
 }
 
-void initializeCamera() {
-  Serial.println("Starting camera initialization...");
-  Serial.println("Starting exposure F Initialization");
-  lancMacro(Exp_F_init, sizeof(Exp_F_init) / sizeof(LancCommand));
-  Serial.println("Starting exposure Gain Initialization");
-  lancMacro(Exp_GAIN_init, sizeof(Exp_GAIN_init) / sizeof(LancCommand));
-  Serial.println("Starting exposure S Initialization");
-  lancMacro(Exp_S_init, sizeof(Exp_S_init) / sizeof(LancCommand));
-  Serial.println("Starting white balance Initialization");
-  lancMacro(WB_init, sizeof(WB_init) / sizeof(LancCommand));
-  Serial.println("Setting default value for exposure F");
-  lancMacro(Exp_F_default, sizeof(Exp_F_default) / sizeof(LancCommand));
-  Serial.println("Setting default value for exposure Gain");
-  lancMacro(Exp_GAIN_default, sizeof(Exp_GAIN_default) / sizeof(LancCommand));
-  Serial.println("Setting default value for exposure S");
-  lancMacro(Exp_S_default, sizeof(Exp_S_default) / sizeof(LancCommand));
-  Serial.println("Setting default value for white balance");
-  lancMacro(WB_default, sizeof(WB_default) / sizeof(LancCommand));
-  Serial.println("Camera initialization complete.");
-  camera_initialized = true;
-}
+
 
 void setup() {
   camera_command = 1;
@@ -419,7 +421,7 @@ void loop() {
             } else if (request.indexOf("GET /init_camera") >= 0) {
               handleInitCamera(client);
             }
-            } else {
+            else {
               handleRoot(client);
             }
             break;

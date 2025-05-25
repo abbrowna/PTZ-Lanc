@@ -396,7 +396,9 @@ const char index_html_part5[] PROGMEM = R"rawliteral(
             }
             return { x: Math.max(0, Math.min(200, x)), y: Math.max(0, Math.min(200, y)) };
         }
+)rawliteral";
 
+const char index_html_part6[] PROGMEM = R"rawliteral(
         function handleMove(e) {
             if (!dragging) return;
             const pos = getEventPos(e);

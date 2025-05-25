@@ -291,6 +291,15 @@ void handleStatus(WiFiClient client) {
   client.println(json);
 }
 
+void handleInitCamera(WiFiClient client) {
+  camera_initialized = false;
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-type:application/json");
+  client.println();
+  client.println("{\"status\":\"initializing\"}");
+  initializeCamera();
+}
+
 void handleInitStatus(WiFiClient client) {
   client.println("HTTP/1.1 200 OK");
   client.println("Content-type:application/json");
@@ -407,6 +416,9 @@ void loop() {
               handleStatus(client);
             } else if (request.indexOf("GET /init_status") >= 0) {
               handleInitStatus(client);
+            } else if (request.indexOf("GET /init_camera") >= 0) {
+              handleInitCamera(client);
+            }
             } else {
               handleRoot(client);
             }

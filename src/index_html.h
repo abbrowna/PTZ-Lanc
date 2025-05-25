@@ -91,16 +91,41 @@ const char index_html_part1[] PROGMEM = R"rawliteral(
             outline: none;
             border-color: #009acd;
         }
+        .spinner {
+            border: 8px solid #f3f3f3;
+            border-top: 8px solid #00bfff;
+            border-radius: 50%;
+            width: 48px;
+            height: 48px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg);}
+            100% { transform: rotate(360deg);}
+        }
+        .init-warning {
+          background: #fffbe5;
+          color: #856404;
+          border: 1px solid #ffeeba;
+          border-radius: 5px;
+          padding: 10px;
+          margin: 10px auto 20px auto;
+          width: fit-content;
+          font-size: 1em;
+          text-align: center;
+        }
     </style>
 </head>
 )rawliteral";
 
 const char index_html_part2[] PROGMEM = R"rawliteral(
 <body>
-    <div id="initialization-modal" class="modal">
-        <div class="modal-content">
-            <p>Initializing camera, please wait...</p>
-        </div>
+    <div id="init-modal" class="modal hidden">
+      <div class="modal-content">
+        <div class="spinner"></div>
+        <p>Initializing camera, please wait...</p>
+      </div>
     </div>
     <div class="container">
         <h1>Camera 1</h1>
@@ -135,6 +160,10 @@ const char index_html_part2[] PROGMEM = R"rawliteral(
             <canvas id="joystick" width="200" height="200" style="background: #e0e0e0; border-radius: 10px;"></canvas>
             <div style="text-align:center;margin-top:8px;">Virtual Joystick</div>
         </div>
+        <button id="init-btn">Initialise Camera</button>
+        <div id="init-warning" class="init-warning" style="display:none;">
+            <span>⚠️ Warning: Camera not initialized, status may be inaccurate.</span>
+        </div>
         <div class="status">
             <h2>Status</h2>
             <p>White Balance : <span id="wb_k">0</span></p>
@@ -142,6 +171,7 @@ const char index_html_part2[] PROGMEM = R"rawliteral(
             <p>Exposure Shutter Speed: <span id="exp_s">0</span></p>
             <p>Exposure Gain: <span id="exp_g">0</span></p>
         </div>
+        
     </div>
 )rawliteral";
 
@@ -174,6 +204,11 @@ const char index_html_part3[] PROGMEM = R"rawliteral(
                     document.getElementById('exp_f').innerText = convertExpF(data.exp_f);
                     document.getElementById('exp_s').innerText = convertExpS(data.exp_s);
                     document.getElementById('exp_g').innerText = data.exp_g;
+                    if (!data.initialized) {
+                        document.getElementById('init-warning').style.display = 'block';
+                    } else {
+                        document.getElementById('init-warning').style.display = 'none';
+                    }
                 })
                 .catch(error => console.error('Error fetching status:', error));
         }
@@ -190,12 +225,18 @@ const char index_html_part3[] PROGMEM = R"rawliteral(
             document.getElementById('camera_command').addEventListener('change', sendCameraCommand);
         });
 
+        document.getElementById('init-btn').addEventListener('click', function() {
+            document.getElementById('init-modal').classList.remove('hidden');
+            fetch('/init_camera')
+              .then(() => pollInitStatus());
+        });
+
         function pollInitStatus() {
             fetch('/init_status')
                 .then(response => response.json())
                 .then(data => {
                     if (data.initialized) {
-                        document.getElementById('initialization-modal').classList.add('hidden');
+                        document.getElementById('init-modal').classList.add('hidden');
                         document.querySelector('.container').style.display = 'block';
                     } else {
                         setTimeout(pollInitStatus, 500); // poll again in 0.5s
@@ -379,9 +420,6 @@ const char index_html_part5[] PROGMEM = R"rawliteral(
             drawJoystick();
             stopJoystick();
         });
-)rawliteral";
-
-const char index_html_part6[] PROGMEM = R"rawliteral(
         canvas.addEventListener('mouseleave', function(e) {
             dragging = false;
             drawJoystick();

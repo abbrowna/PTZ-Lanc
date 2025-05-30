@@ -67,6 +67,9 @@ bool tiltStepState = false;
 bool tiltLastDirection = false;
 float tiltLastSpeed = 0;
 
+// --- Joystick state ---
+bool joystickActive = false;
+
 // --- Start/Stop functions for PAN ---
 void startPanStepper(bool direction, float speed) {
     speed = constrain(speed, 0.1, 4.0); // avoid divide by zero, clamp to 0.1..4
@@ -275,29 +278,25 @@ void handleJoystick(WiFiClient client, String request) {
     // Map pan/tilt to direction and speed (use float speed)
     if (pan > 0.05) {
         startPanStepper(false, pan); // right, speed
-        right_arrow = true;
-        left_arrow = false;
+        joystickActive = true;
     } else if (pan < -0.05) {
         startPanStepper(true, -pan); // left, speed
-        left_arrow = true;
-        right_arrow = false;
+        joystickActive = true
     } else {
         panStepperActive = false;
-        left_arrow = false;
-        right_arrow = false;
+        joystickActive = false;
     }
     if (tilt > 0.05) {
         startTiltStepper(false, tilt); // down, speed
-        down_arrow = true;
-        up_arrow = false;
+        joystickActive = true;
+
     } else if (tilt < -0.05) {
         startTiltStepper(true, -tilt); // up, speed
-        up_arrow = true;
-        down_arrow = false;
+        joystickActive = true;
+
     } else {
         tiltStepperActive = false;
-        up_arrow = false;
-        down_arrow = false;
+        joystickActive = false;
     }
     client.println("HTTP/1.1 200 OK");
     client.println("Content-type:application/json");
@@ -600,13 +599,14 @@ void loop() {
       left_arrow = false;
     }
   }
-  if(!left_arrow && !right_arrow && !up_arrow && !down_arrow){
+
+  /*******  OTHER STUFF TO DO IN VOID LOOP **********/
+  
+  if(!left_arrow && !right_arrow && !up_arrow && !down_arrow && !joystickActive) {
     //If no arrow is pressed, stop the stepper motors
     panStepperActive = false;
     tiltStepperActive = false;
   }
-  /*******  OTHER STUFF TO DO IN VOID LOOP **********/
-  
 
   if (millis()-lastpan >= motor_timeout && !timeout_flag){
     //Disable the pan stepper motor. 

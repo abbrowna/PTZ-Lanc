@@ -282,7 +282,7 @@ void handleJoystick(WiFiClient client, String request) {
         left_arrow = true;
         right_arrow = false;
     } else {
-        stopPanStepper();
+        panStepperActive = false;
         left_arrow = false;
         right_arrow = false;
     }
@@ -295,7 +295,7 @@ void handleJoystick(WiFiClient client, String request) {
         up_arrow = true;
         down_arrow = false;
     } else {
-        stopTiltStepper();
+        tiltStepperActive = false;
         up_arrow = false;
         down_arrow = false;
     }
@@ -387,10 +387,10 @@ void setup() {
   Serial.println("\nConnected to WiFi");
   Serial.print("IP Address: ");
   Serial.println(WiFi.localIP());
-
+  
   // Display initialization message
   Serial.println("Initializing camera...");
-  initializeCamera();
+  //initializeCamera();
 
   // Start the server
   server.begin();
@@ -603,7 +603,7 @@ void loop() {
   if(!left_arrow && !right_arrow && !up_arrow && !down_arrow){
     //If no arrow is pressed, stop the stepper motors
     panStepperActive = false;
-    tiltStepperActive = true;
+    tiltStepperActive = false;
   }
   /*******  OTHER STUFF TO DO IN VOID LOOP **********/
   

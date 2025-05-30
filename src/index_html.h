@@ -38,7 +38,7 @@ const char index_html_part1[] PROGMEM = R"rawliteral(
             display: none;
         }
         .container {
-            display: none;
+            display: block;
             text-align: center;
         }
         .controls {
@@ -213,7 +213,10 @@ const char index_html_part3[] PROGMEM = R"rawliteral(
                 .catch(error => console.error('Error fetching status:', error));
         }
 
+        // --- CHANGES START HERE ---
+        // Poll on page load for warning only (no modal)
         document.addEventListener('DOMContentLoaded', function() {
+            pollInitStatus(false); // false = don't show modal
             document.getElementById('btn-up').addEventListener('mousedown', () => sendDirectionCommand('up', true));
             document.getElementById('btn-up').addEventListener('mouseup', () => sendDirectionCommand('up', false));
             document.getElementById('btn-down').addEventListener('mousedown', () => sendDirectionCommand('down', true));
@@ -228,28 +231,36 @@ const char index_html_part3[] PROGMEM = R"rawliteral(
         document.getElementById('init-btn').addEventListener('click', function() {
             document.getElementById('init-modal').classList.remove('hidden');
             fetch('/init_camera')
-              .then(() => pollInitStatus());
+              .then(() => pollInitStatus(true)); // true = show modal and poll until initialized
         });
+)rawliteral";
 
-        function pollInitStatus() {
+const char index_html_part4[] PROGMEM = R"rawliteral(
+        // Poll function: if modalMode is true, keep polling until initialized and hide modal when done
+        function pollInitStatus(modalMode) {
             fetch('/init_status')
                 .then(response => response.json())
                 .then(data => {
                     if (data.initialized) {
                         document.getElementById('init-modal').classList.add('hidden');
-                        document.querySelector('.container').style.display = 'block';
+                        document.getElementById('init-warning').style.display = 'none';
                     } else {
-                        setTimeout(pollInitStatus, 500); // poll again in 0.5s
+                        document.getElementById('init-warning').style.display = 'block';
+                        if (modalMode) {
+                            setTimeout(() => pollInitStatus(true), 500);
+                        }
                     }
                 })
-                .catch(() => setTimeout(pollInitStatus, 1000)); // try again in 1s on error
+                .catch(() => {
+                    if (modalMode) setTimeout(() => pollInitStatus(true), 1000);
+                });
         }
+
 
         document.addEventListener('DOMContentLoaded', pollInitStatus);
 
         setInterval(updateStatus, 1000); // Update status every second
-    </script>
-    <script>
+
         function convertToKelvin(index) {
             const minKelvin = 2000;
             return minKelvin + (index * 100);
@@ -271,9 +282,7 @@ const char index_html_part3[] PROGMEM = R"rawliteral(
             ];
             return expSValues[index] || "Unknown";
         }
-)rawliteral";
 
-const char index_html_part4[] PROGMEM = R"rawliteral(
         const keyState = {};
 
         document.addEventListener('keydown', (event) => {
@@ -295,7 +304,9 @@ const char index_html_part4[] PROGMEM = R"rawliteral(
                     break;
             }
         });
+)rawliteral";
 
+const char index_html_part5[] PROGMEM = R"rawliteral(
         document.addEventListener('keyup', (event) => {
             if (!keyState[event.code]) return; // Ignore if key is already released
             keyState[event.code] = false;
@@ -336,10 +347,9 @@ const char index_html_part4[] PROGMEM = R"rawliteral(
             return null;
         }
     </script>
-)rawliteral";
 
-const char index_html_part5[] PROGMEM = R"rawliteral(
     <script>
+    document.addEventListener('DOMContentLoaded', function() {
         const canvas = document.getElementById('joystick');
         const ctx = canvas.getContext('2d');
         const center = { x: 100, y: 100 };
@@ -369,7 +379,9 @@ const char index_html_part5[] PROGMEM = R"rawliteral(
         }
 
         drawJoystick();
+)rawliteral";
 
+const char index_html_part6[] PROGMEM = R"rawliteral(
         function sendJoystickCommand(pan, tilt) {
             // Only send if changed
             if (lastSent.pan === pan && lastSent.tilt === tilt) return;
@@ -396,9 +408,7 @@ const char index_html_part5[] PROGMEM = R"rawliteral(
             }
             return { x: Math.max(0, Math.min(200, x)), y: Math.max(0, Math.min(200, y)) };
         }
-)rawliteral";
 
-const char index_html_part6[] PROGMEM = R"rawliteral(
         function handleMove(e) {
             if (!dragging) return;
             const pos = getEventPos(e);
@@ -443,6 +453,7 @@ const char index_html_part6[] PROGMEM = R"rawliteral(
             stopJoystick();
             e.preventDefault();
         });
+    });
     </script>
 </body>
 </html>

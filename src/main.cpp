@@ -281,7 +281,7 @@ void handleJoystick(WiFiClient client, String request) {
         joystickActive = true;
     } else if (pan < -0.05) {
         startPanStepper(true, -pan); // left, speed
-        joystickActive = true
+        joystickActive = true;
     } else {
         panStepperActive = false;
         joystickActive = false;

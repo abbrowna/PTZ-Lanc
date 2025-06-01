@@ -382,6 +382,38 @@ const char index_html_part5[] PROGMEM = R"rawliteral(
 )rawliteral";
 
 const char index_html_part6[] PROGMEM = R"rawliteral(
+
+        // Throttle joystick requests to at most one every 50ms
+        let lastJoystickSend = 0;
+        let pendingJoystick = null;
+
+        function sendJoystickCommandThrottled(pan, tilt) {
+            const now = Date.now();
+            // Always send the stop event immediately
+            if (pan === 0 && tilt === 0) {
+                sendJoystickCommand(0, 0);
+                lastJoystickSend = now;
+                pendingJoystick = null;
+                return;
+            }
+            // If enough time has passed, send immediately
+            if (now - lastJoystickSend > 50) {
+                sendJoystickCommand(pan, tilt);
+                lastJoystickSend = now;
+                pendingJoystick = null;
+            } else {
+                // Otherwise, schedule to send after the remaining time
+                pendingJoystick = { pan, tilt };
+                setTimeout(() => {
+                    if (pendingJoystick) {
+                        sendJoystickCommand(pendingJoystick.pan, pendingJoystick.tilt);
+                        lastJoystickSend = Date.now();
+                        pendingJoystick = null;
+                    }
+                }, 50 - (now - lastJoystickSend));
+            }
+        }
+
         function sendJoystickCommand(pan, tilt) {
             // Only send if changed
             if (lastSent.pan === pan && lastSent.tilt === tilt) return;
@@ -418,8 +450,8 @@ const char index_html_part6[] PROGMEM = R"rawliteral(
             const dy = pos.y - 100;
             // Map to -4..4 (speed), direction by sign
             let pan = Math.max(-4, Math.min(4, dx / 25));
-            let tilt = Math.max(-4, Math.min(4, dy / 25));
-            sendJoystickCommand(pan, tilt);
+            let tilt = -Math.max(-4, Math.min(4, dy / 25));
+            sendJoystickCommandThrottled(pan, tilt);
         }
 
         canvas.addEventListener('mousedown', function(e) {

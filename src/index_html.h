@@ -156,6 +156,7 @@ const char index_html_part2[] PROGMEM = R"rawliteral(
             <button id="btn-right" style="grid-area: 2 / 3;">Right</button>
             <button id="btn-down" style="grid-area: 3 / 2;">Down</button>
         </div>
+        <button id="stop-all-btn" style="margin-top:20px;">Stop All</button>
         <div id="joystick-container" style="margin: 40px auto; width: 200px; height: 200px; position: relative;">
             <canvas id="joystick" width="200" height="200" style="background: #e0e0e0; border-radius: 10px;"></canvas>
             <div style="text-align:center;margin-top:8px;">Virtual Joystick</div>
@@ -177,8 +178,14 @@ const char index_html_part2[] PROGMEM = R"rawliteral(
 
 const char index_html_part3[] PROGMEM = R"rawliteral(
     <script>
-        console.log("JavaScript Loaded");
+        console.log('Script loaded');
 
+        // --- Stop All Directions ---
+        function stopAll() {
+            fetch('/stopall').catch(()=>{});
+        }
+
+        // --- Direction Button Logic ---
         function sendDirectionCommand(direction, state) {
             const endpoint = `/direction/${direction}/${state ? 'on' : 'off'}`;
             fetch(endpoint)
@@ -187,6 +194,15 @@ const char index_html_part3[] PROGMEM = R"rawliteral(
                 .catch(error => console.error('Error sending direction command:', error));
         }
 
+        function startArrow(direction) {
+            sendDirectionCommand(direction, true);
+        }
+
+        function stopArrow(direction) {
+            sendDirectionCommand(direction, false);
+        }
+
+        // --- Camera Command Dropdown ---
         function sendCameraCommand() {
             const command = document.getElementById('camera_command').value;
             const endpoint = `/camera_command/${command}`;
@@ -196,6 +212,7 @@ const char index_html_part3[] PROGMEM = R"rawliteral(
                 .catch(error => console.error('Error sending camera command:', error));
         }
 
+        // --- Status Polling ---
         function updateStatus() {
             fetch('/status')
                 .then(response => response.json())
@@ -213,31 +230,56 @@ const char index_html_part3[] PROGMEM = R"rawliteral(
                 .catch(error => console.error('Error fetching status:', error));
         }
 
-        // --- CHANGES START HERE ---
-        // Poll on page load for warning only (no modal)
-        document.addEventListener('DOMContentLoaded', function() {
-            pollInitStatus(false); // false = don't show modal
-            document.getElementById('btn-up').addEventListener('mousedown', () => sendDirectionCommand('up', true));
-            document.getElementById('btn-up').addEventListener('mouseup', () => sendDirectionCommand('up', false));
-            document.getElementById('btn-down').addEventListener('mousedown', () => sendDirectionCommand('down', true));
-            document.getElementById('btn-down').addEventListener('mouseup', () => sendDirectionCommand('down', false));
-            document.getElementById('btn-left').addEventListener('mousedown', () => sendDirectionCommand('left', true));
-            document.getElementById('btn-left').addEventListener('mouseup', () => sendDirectionCommand('left', false));
-            document.getElementById('btn-right').addEventListener('mousedown', () => sendDirectionCommand('right', true));
-            document.getElementById('btn-right').addEventListener('mouseup', () => sendDirectionCommand('right', false));
-            document.getElementById('camera_command').addEventListener('change', sendCameraCommand);
+        // --- Keyboard Arrow Logic ---
+        function sendKeyboardDirection(dir, state) {
+            fetch(`/keyboard/${dir}/${state ? 'on' : 'off'}`).catch(()=>{});
+        }
+
+        let keyState = {};
+
+        document.addEventListener('keydown', (event) => {
+            switch (event.code) {
+                case 'ArrowUp':
+                case 'ArrowDown':
+                case 'ArrowLeft':
+                case 'ArrowRight':
+                    if (!keyState[event.code]) { // Only send if not already pressed
+                        keyState[event.code] = true;
+                        sendKeyboardDirection(event.code.replace('Arrow', '').toLowerCase(), true);
+                    }
+                    break;
+            }
         });
 
-        document.getElementById('init-btn').addEventListener('click', function() {
-            document.getElementById('init-modal').classList.remove('hidden');
-            fetch('/init_camera')
-              .then(() => pollInitStatus(true)); // true = show modal and poll until initialized
+        document.addEventListener('keyup', (event) => {
+            switch (event.code) {
+                case 'ArrowUp':
+                case 'ArrowDown':
+                case 'ArrowLeft':
+                case 'ArrowRight':
+                    event.preventDefault(); // Prevent window scrolling
+                    if (keyState[event.code]) {
+                        keyState[event.code] = false;
+                        const dir = event.code.replace('Arrow', '').toLowerCase();
+                        // Hit the off endpoint 3 times as a failsafe
+                        for (let i = 0; i < 3; i++) {
+                            sendKeyboardDirection(dir, false);
+                        }
+                    }
+                    break;
+            }
         });
+
+        // Failsafe: stop all on blur/unload
+        window.addEventListener('blur', stopAll);
+        window.addEventListener('beforeunload', stopAll);
 )rawliteral";
 
 const char index_html_part4[] PROGMEM = R"rawliteral(
+        // --- DOMContentLoaded: Button Event Setup ---
+
         // Poll function: if modalMode is true, keep polling until initialized and hide modal when done
-        function pollInitStatus(modalMode) {
+        function pollInitStatus(modalMode = false) {
             fetch('/init_status')
                 .then(response => response.json())
                 .then(data => {
@@ -252,14 +294,66 @@ const char index_html_part4[] PROGMEM = R"rawliteral(
                     }
                 })
                 .catch(() => {
-                    if (modalMode) setTimeout(() => pollInitStatus(true), 1000);
+                        if (modalMode === true) {
+                            setTimeout(() => pollInitStatus(true), 1000);
+                        }
                 });
         }
 
+        document.addEventListener('DOMContentLoaded', function() {
+            pollInitStatus(false); // false = don't show modal
+            setInterval(updateStatus, 5000); // Update status every second
+            // Button press/release for arrows
+            document.getElementById('btn-up').addEventListener('mousedown', () => startArrow('up'));
+            document.getElementById('btn-up').addEventListener('mouseup', () => stopArrow('up'));
+            document.getElementById('btn-down').addEventListener('mousedown', () => startArrow('down'));
+            document.getElementById('btn-down').addEventListener('mouseup', () => stopArrow('down'));
+            document.getElementById('btn-left').addEventListener('mousedown', () => startArrow('left'));
+            document.getElementById('btn-left').addEventListener('mouseup', () => stopArrow('left'));
+            document.getElementById('btn-right').addEventListener('mousedown', () => startArrow('right'));
+            document.getElementById('btn-right').addEventListener('mouseup', () => stopArrow('right'));
 
-        document.addEventListener('DOMContentLoaded', pollInitStatus);
+            // Stop arrow on mouseleave/blur for all buttons
+            ['up', 'down', 'left', 'right'].forEach(dir => {
+                const btn = document.getElementById(`btn-${dir}`);
+                if (!btn) return;
+                btn.addEventListener('mouseleave', () => stopArrow(dir));
+                btn.addEventListener('blur', () => stopArrow(dir));
+            });
 
-        setInterval(updateStatus, 1000); // Update status every second
+            // disable context menu for buttons
+            ['up', 'down', 'left', 'right'].forEach(dir => {
+                const btn = document.getElementById(`btn-${dir}`);
+                if (!btn) return;
+                btn.addEventListener('touchstart', (e) => {
+                    e.preventDefault(); // Prevents context menu and scrolling
+                    startArrow(dir);
+                });
+                btn.addEventListener('touchend', (e) => {
+                    e.preventDefault();
+                    stopArrow(dir);
+                });
+                btn.addEventListener('mouseleave', () => stopArrow(dir));
+                btn.addEventListener('blur', () => stopArrow(dir));
+            });
+
+            document.getElementById('camera_command').addEventListener('change', sendCameraCommand);
+
+            document.getElementById('stop-all-btn').addEventListener('click', stopAll);
+
+
+        });
+
+    </script>
+)rawliteral";
+
+const char index_html_part5[] PROGMEM = R"rawliteral(
+    <script>
+        document.getElementById('init-btn').addEventListener('click', function() {
+            document.getElementById('init-modal').classList.remove('hidden');
+            fetch('/init_camera')
+              .then(() => pollInitStatus(true)); // true = show modal and poll until initialized
+        });
 
         function convertToKelvin(index) {
             const minKelvin = 2000;
@@ -283,69 +377,39 @@ const char index_html_part4[] PROGMEM = R"rawliteral(
             return expSValues[index] || "Unknown";
         }
 
-        const keyState = {};
+        function sendKeyboardDirection(dir, state) {
+            fetch(`/keyboard/${dir}/${state ? 'on' : 'off'}`).catch(()=>{});
+        }
 
         document.addEventListener('keydown', (event) => {
-            if (keyState[event.code]) return; // Avoid multiple triggers while key is held
-            keyState[event.code] = true;
-
             switch (event.code) {
                 case 'ArrowUp':
-                    sendDirectionCommand('up', true);
-                    break;
                 case 'ArrowDown':
-                    sendDirectionCommand('down', true);
-                    break;
                 case 'ArrowLeft':
-                    sendDirectionCommand('left', true);
-                    break;
                 case 'ArrowRight':
-                    sendDirectionCommand('right', true);
+                    event.preventDefault(); // Prevent default scrolling behavior
+                    if (!keyState[event.code]) { // Only send if not already pressed
+                        keyState[event.code] = true;
+                        sendKeyboardDirection(event.code.replace('Arrow', '').toLowerCase(), true);
+                    }
                     break;
             }
         });
-)rawliteral";
 
-const char index_html_part5[] PROGMEM = R"rawliteral(
         document.addEventListener('keyup', (event) => {
-            if (!keyState[event.code]) return; // Ignore if key is already released
-            keyState[event.code] = false;
-
             switch (event.code) {
                 case 'ArrowUp':
-                    sendDirectionCommand('up', false);
-                    break;
                 case 'ArrowDown':
-                    sendDirectionCommand('down', false);
-                    break;
                 case 'ArrowLeft':
-                    sendDirectionCommand('left', false);
-                    break;
                 case 'ArrowRight':
-                    sendDirectionCommand('right', false);
+                    event.preventDefault(); // Prevent default scrolling behavior
+                    if (keyState[event.code]) {
+                        keyState[event.code] = false;
+                        sendKeyboardDirection(event.code.replace('Arrow', '').toLowerCase(), false);
+                    }
                     break;
             }
         });
-
-        // Ensure keys are reset if the window loses focus
-        window.addEventListener('blur', () => {
-            for (const key in keyState) {
-                if (keyState[key]) {
-                    sendDirectionCommand(getDirectionFromKey(key), false);
-                    keyState[key] = false;
-                }
-            }
-        });
-
-        function getDirectionFromKey(key) {
-            switch (key) {
-                case 'ArrowUp': return 'up';
-                case 'ArrowDown': return 'down';
-                case 'ArrowLeft': return 'left';
-                case 'ArrowRight': return 'right';
-            }
-            return null;
-        }
     </script>
 
     <script>
@@ -355,6 +419,9 @@ const char index_html_part5[] PROGMEM = R"rawliteral(
         const center = { x: 100, y: 100 };
         let dragging = false;
         let lastSent = { pan: 0, tilt: 0 };
+
+        // --- Joystick sensitivity threshold ---
+        const JOYSTICK_THRESHOLD = 0.1; // Minimum change required to send a new request
 
         function drawJoystick(pos) {
             ctx.clearRect(0, 0, 200, 200);
@@ -382,7 +449,6 @@ const char index_html_part5[] PROGMEM = R"rawliteral(
 )rawliteral";
 
 const char index_html_part6[] PROGMEM = R"rawliteral(
-
         // Throttle joystick requests to at most one every 50ms
         let lastJoystickSend = 0;
         let pendingJoystick = null;
@@ -415,8 +481,11 @@ const char index_html_part6[] PROGMEM = R"rawliteral(
         }
 
         function sendJoystickCommand(pan, tilt) {
-            // Only send if changed
-            if (lastSent.pan === pan && lastSent.tilt === tilt) return;
+            // Only send if changed by at least the threshold
+            if (
+                Math.abs(lastSent.pan - pan) < JOYSTICK_THRESHOLD &&
+                Math.abs(lastSent.tilt - tilt) < JOYSTICK_THRESHOLD
+            ) return;
             lastSent = { pan, tilt };
             // Send as GET /joystick?pan=val&tilt=val
             fetch(`/joystick?pan=${pan}&tilt=${tilt}`)
@@ -450,7 +519,7 @@ const char index_html_part6[] PROGMEM = R"rawliteral(
             const dy = pos.y - 100;
             // Map to -4..4 (speed), direction by sign
             let pan = Math.max(-4, Math.min(4, dx / 25));
-            let tilt = -Math.max(-4, Math.min(4, dy / 25));
+            let tilt = Math.max(-4, Math.min(4, dy / 25));
             sendJoystickCommandThrottled(pan, tilt);
         }
 
@@ -467,7 +536,10 @@ const char index_html_part6[] PROGMEM = R"rawliteral(
         canvas.addEventListener('mouseleave', function(e) {
             dragging = false;
             drawJoystick();
+            // Send stopJoystick 3 times with a small delay
             stopJoystick();
+            setTimeout(stopJoystick, 50);
+            setTimeout(stopJoystick, 100);
         });
         // Touch support
         canvas.addEventListener('touchstart', function(e) {
@@ -487,6 +559,7 @@ const char index_html_part6[] PROGMEM = R"rawliteral(
         });
     });
     </script>
+
 </body>
 </html>
 )rawliteral";

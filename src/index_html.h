@@ -104,6 +104,9 @@ const char index_html_part1[] PROGMEM = R"rawliteral(
             0% { transform: rotate(0deg);}
             100% { transform: rotate(360deg);}
         }
+)rawliteral";
+
+const char index_html_part2[] PROGMEM = R"rawliteral(
         .init-warning {
           background: #fffbe5;
           color: #856404;
@@ -115,34 +118,12 @@ const char index_html_part1[] PROGMEM = R"rawliteral(
           font-size: 1em;
           text-align: center;
         }
-)rawliteral";
-
-const char index_html_part2[] PROGMEM = R"rawliteral(
-          /* Firmware upload styling */
-        #firmwareFile {
-            display: inline-block;
-            margin: 20px 10px 10px 0;
-            padding: 8px;
-            border: 1px solid #00bfff;
+        #ota-progress {
+            height: 18px;
             border-radius: 5px;
-            background: #f0f8ff;
-            color: #333;
-            font-size: 1em;
-        }
-        button[onclick="uploadFirmware()"] {
-            background: #00bfff;
-            color: #fff;
-            border: none;
-            border-radius: 5px;
-            padding: 10px 22px;
-            font-size: 1em;
-            font-weight: bold;
-            cursor: pointer;
-            transition: background 0.2s;
-            margin-bottom: 20px;
-        }
-        button[onclick="uploadFirmware()"]:hover {
-            background: #009acd;
+            background: #e0e0e0;
+            accent-color: #00bfff;
+            margin-top: 8px;
         }
     </style>
 </head>
@@ -199,8 +180,13 @@ const char index_html_part2[] PROGMEM = R"rawliteral(
             <p>Exposure Shutter Speed: <span id="exp_s">0</span></p>
             <p>Exposure Gain: <span id="exp_g">0</span></p>
         </div>
-        <input type="file" id="firmwareFile">
-        <button onclick="uploadFirmware()">Upload Firmware</button>
+        <div id="ota-upload-raw">
+            <label for="firmwareFile">Upload new firmware (.bin):</label>
+            <input type="file" id="firmwareFile" name="firmwareFile" accept=".bin" required>
+            <button id="ota-upload-btn" type="button">Upload & Update</button>
+            <div id="ota-status" style="margin-top:10px; color:#00bfff;"></div>
+            <progress id="ota-progress" value="0" max="100" style="width:100%; display:none;"></progress>
+        </div>
         
     </div>
 )rawliteral";
@@ -588,26 +574,47 @@ const char index_html_part6[] PROGMEM = R"rawliteral(
 const char index_html_part7[] PROGMEM = R"rawliteral(
 
     <script>
-        async function uploadFirmware() {
-        const fileInput = document.getElementById("firmwareFile");
-        const file = fileInput.files[0];
-        if (!file) {
-            alert("Please select a firmware file.");
-            return;
-        }
+        document.getElementById('ota-upload-btn').addEventListener('click', function() {
+            const fileInput = document.getElementById('firmwareFile');
+            const statusDiv = document.getElementById('ota-status');
+            const progressBar = document.getElementById('ota-progress');
+            if (!fileInput.files.length) {
+                statusDiv.innerText = "Please select a file.";
+                return;
+            }
+            const file = fileInput.files[0];
+            statusDiv.innerText = "Uploading...";
+            progressBar.value = 0;
+            progressBar.style.display = "block";
 
-        const response = await fetch("/upload", {
-            method: "POST",
-            headers: {
-            "Content-Type": "application/octet-stream",
-            "Content-Length": file.size  // optional, but might help
-            },
-            body: file
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/upload', true);
+            xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+
+            xhr.upload.onprogress = function(e) {
+                if (e.lengthComputable) {
+                    const percent = Math.round((e.loaded / e.total) * 100);
+                    progressBar.value = percent;
+                    statusDiv.innerText = `Uploading... ${percent}%`;
+                }
+            };
+
+            xhr.onload = function() {
+                progressBar.style.display = "none";
+                if (xhr.status === 200) {
+                    statusDiv.innerText = xhr.responseText;
+                } else {
+                    statusDiv.innerText = "Upload failed: " + xhr.statusText;
+                }
+            };
+
+            xhr.onerror = function() {
+                progressBar.style.display = "none";
+                statusDiv.innerText = "Upload failed: Network error";
+            };
+
+            xhr.send(file);
         });
-
-        const result = await response.text();
-        alert("Upload result:\n" + result);
-        }
     </script>
 
 </body>

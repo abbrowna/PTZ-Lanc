@@ -1,10 +1,12 @@
 #include <WiFiNINA.h>
 #include "lancCommands.h"
 #include "index_html.h"
+#include "admin_html.h"
 //#include "mbed.h"
 #include <ArduinoOTA.h>
 #include <SFU.h>
 #include "Internalstorage.h"
+#include "staticStorage.h"
 #include "hardware/pwm.h"
 
 /* Declare state variables*/
@@ -276,7 +278,7 @@ void runrollStepper(float speed, bool direction) {
 }
 
 
-void handleRoot(WiFiClient client) {
+/*void oldhandleRoot(WiFiClient client) {
   client.println("HTTP/1.1 200 OK");
   client.println("Content-type:text/html");
   client.println();
@@ -287,6 +289,94 @@ void handleRoot(WiFiClient client) {
   client.print(index_html_part5);
   client.print(index_html_part6);
   client.print(index_html_part7);
+}*/
+
+void handleRoot(WiFiClient client) {
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-type: text/html");
+    client.println();
+
+    StaticStorage.stream(StaticStorageClass::HTML, [&](uint8_t* buf, size_t len) {
+        client.write(buf, len);
+    });
+}
+
+void handleAdmin(WiFiClient client) {
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-type: text/html");
+    client.println();
+    client.print(admin_html);
+}
+
+void handleCSS(WiFiClient client) {
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-type: text/css");
+    client.println();
+
+    StaticStorage.stream(StaticStorageClass::CSS, [&](uint8_t* buf, size_t len) {
+        client.write(buf, len);
+    });
+}
+
+void handleJS(WiFiClient client) {
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-type: application/javascript");
+    client.println();
+
+    StaticStorage.stream(StaticStorageClass::JS, [&](uint8_t* buf, size_t len) {
+        client.write(buf, len);
+    });
+}
+
+void handleStaticUpload(WiFiClient& client, long contentLength, StaticStorageClass::FileType type, const char* label) {
+    Serial.print("Handling static upload: "); Serial.println(label);
+
+    if (contentLength <= 0) {
+        client.println("HTTP/1.1 400 Bad Request");
+        client.println("Content-type:text/plain");
+        client.println();
+        client.println("Missing or invalid Content-Length");
+        return;
+    }
+
+    if (StaticStorage.open(type, contentLength) < 0) {
+        client.println("HTTP/1.1 500 Internal Server Error");
+        client.println("Content-type:text/plain");
+        client.println();
+        client.print("Failed to open storage for ");
+        client.println(label);
+        return;
+    }
+
+    long bytesWritten = 0;
+    long lastReportedKB = 0;
+
+    while (bytesWritten < contentLength && client.connected()) {
+        if (client.available()) {
+            uint8_t c = client.read();
+            if (StaticStorage.write(c)) {
+                bytesWritten++;
+                if ((bytesWritten / 1024) > lastReportedKB) {
+                    lastReportedKB = bytesWritten / 1024;
+                    Serial.print("Written: ");
+                    Serial.print(lastReportedKB);
+                    Serial.println(" KB");
+                }
+            } else {
+                Serial.println("Write failed.");
+                break;
+            }
+        }
+    }
+
+    StaticStorage.close();
+    Serial.print(label); Serial.print(" upload complete, bytes written: ");
+    Serial.println(bytesWritten);
+
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-type:text/plain");
+    client.println();
+    client.print(label); client.println(" upload complete.");
 }
 
 void handleDirection(WiFiClient client, String request) {
@@ -640,39 +730,68 @@ void loop() {
     if (client) {
         String currentLine = "";
         String request = "";
-        //String fullHeader = "";
-        //bool headersComplete = false;
         long contentLength = -1;
         while (client.connected()) {
           if (client.available()) {
             char c = client.read();
             request += c;
-            //fullHeader += c; // Collect full header for debugging
             if (c == '\n') {
               if (currentLine.length() == 0) {
                 // End of headers
                 if (request.indexOf("GET /joystick") >= 0) {
                   handleJoystick(client, request);
-                } else if (request.indexOf("GET /keyboard") >= 0) {
+                } 
+                else if (request.indexOf("GET /keyboard") >= 0) {
                   handleKeypress(client, request); 
-                } else if (request.indexOf("GET /direction") >= 0) {
+                } 
+                else if (request.indexOf("GET /direction") >= 0) {
                   handleDirection(client, request);
-                } else if (request.indexOf("GET /camera_command") >= 0) {
+                } 
+                else if (request.indexOf("GET /camera_command") >= 0) {
                   handleCameraCommand(client, request);
-                } else if (request.indexOf("GET /status") >= 0) {
+                } 
+                else if (request.indexOf("GET /status") >= 0) {
                   handleStatus(client);
-                } else if (request.indexOf("GET /init_status") >= 0) {
+                } 
+                else if (request.indexOf("GET /init_status") >= 0) {
                   handleInitStatus(client);
-                } else if (request.indexOf("GET /init_camera") >= 0) {
+                } 
+                else if (request.indexOf("GET /init_camera") >= 0) {
                   handleInitCamera(client);
-                } else if (request.indexOf("GET /stopall") >= 0) {
+                } 
+                else if (request.indexOf("GET /stopall") >= 0) {
                   handleStopAll(client);
-                } else if(request.indexOf("POST /upload") >= 0) {
+                } 
+                else if (request.indexOf("GET /admin") >= 0) {
+                  handleAdmin(client);
+                }
+                else if (request.indexOf("POST /upload_html") >= 0) {
+                  handleStaticUpload(client, contentLength, StaticStorageClass::HTML, "HTML");
+                }
+                else if (request.indexOf("POST /upload_css") >= 0) {
+                  handleStaticUpload(client, contentLength, StaticStorageClass::CSS, "CSS");
+                }
+                else if (request.indexOf("POST /upload_js") >= 0) {
+                  handleStaticUpload(client, contentLength, StaticStorageClass::JS, "JS");
+                }
+                else if(request.indexOf("POST /upload") >= 0) {
                   handleOTAUpload(client, contentLength);
-                } else if (request.indexOf("GET /") >= 0 || request.indexOf("GET /index.html") >= 0) {
+                }
+                else if (request.indexOf("GET /favicon.ico") >= 0) {
+                    client.println("HTTP/1.1 204 No Content");
+                    client.println("Content-Length: 0");
+                    client.println();
+                }
+                else if (request.indexOf("GET /style.css") >= 0) {
+                  handleCSS(client);
+                }
+                else if (request.indexOf("GET /app.js") >= 0) {
+                  handleJS(client);
+                }                 
+                else if (request.indexOf("GET /") >= 0 || request.indexOf("GET /index.html") >= 0) {
                   // Serve the main HTML page
                   handleRoot(client);
-                }
+                } 
                 else {
                   handleRoot(client);
                 }

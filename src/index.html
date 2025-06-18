@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PTZ Camera Control</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div id="init-modal" class="modal hidden">
+      <div class="modal-content">
+        <div class="spinner"></div>
+        <p>Initializing camera, please wait...</p>
+      </div>
+    </div>
+    <div class="container">
+        <h1>Camera 1</h1>
+        <div class="dropdown-container">
+            <label for="camera_command">Select action</label>
+            <select id="camera_command" name="camera_command">
+                <option value="1">ZOOM_1</option>
+                <option value="2">ZOOM_2</option>
+                <option value="3">ZOOM_3</option>
+                <option value="4">ZOOM_4</option>
+                <option value="5">ZOOM_5</option>
+                <option value="6">ZOOM_6</option>
+                <option value="7">ZOOM_7</option>
+                <option value="8">FOCUS</option>
+                <option value="9">White Balance K</option>
+                <option value="10">Exposure Appeture</option>
+                <option value="11">Exposure Shutter speed</option>
+                <option value="12">Exposure Gain</option>
+                <option value="13">PAN / TILT FAST</option>
+                <option value="14">PAN / TILT MEDIUM</option>
+                <option value="15">PAN / TILT SLOW</option>
+            </select>
+        </div>
+        <div class="controls">
+            <button id="btn-up" style="grid-area: 1 / 2;">Up</button>
+            <button id="btn-left" style="grid-area: 2 / 1;">Left</button>
+            <button id="btn-center" style="grid-area: 2 / 2; visibility: hidden;"></button>
+            <button id="btn-right" style="grid-area: 2 / 3;">Right</button>
+            <button id="btn-down" style="grid-area: 3 / 2;">Down</button>
+        </div>
+        <button id="stop-all-btn" style="margin-top:20px;">Stop All</button>
+        <div id="joystick-container" style="margin: 40px auto; width: 200px; height: 200px; position: relative;">
+            <canvas id="joystick" width="200" height="200" style="background: #e0e0e0; border-radius: 10px;"></canvas>
+            <div style="text-align:center;margin-top:8px;">Virtual Joystick</div>
+        </div>
+        <button id="init-btn">Initialise Camera</button>
+        <div id="init-warning" class="init-warning" style="display:none;">
+            <span>⚠️ Warning: Camera not initialized, status may be inaccurate.</span>
+        </div>
+        <div class="status">
+            <h2>Status</h2>
+            <p>White Balance : <span id="wb_k">0</span></p>
+            <p>Exposure : <span id="exp_f">0</span></p>
+            <p>Exposure Shutter Speed: <span id="exp_s">0</span></p>
+            <p>Exposure Gain: <span id="exp_g">0</span></p>
+        </div>
+    </div>
+    <script src="/app.js"></script>
+</body>
+</html>

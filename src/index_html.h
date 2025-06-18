@@ -115,11 +115,38 @@ const char index_html_part1[] PROGMEM = R"rawliteral(
           font-size: 1em;
           text-align: center;
         }
-    </style>
-</head>
 )rawliteral";
 
 const char index_html_part2[] PROGMEM = R"rawliteral(
+          /* Firmware upload styling */
+        #firmwareFile {
+            display: inline-block;
+            margin: 20px 10px 10px 0;
+            padding: 8px;
+            border: 1px solid #00bfff;
+            border-radius: 5px;
+            background: #f0f8ff;
+            color: #333;
+            font-size: 1em;
+        }
+        button[onclick="uploadFirmware()"] {
+            background: #00bfff;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            padding: 10px 22px;
+            font-size: 1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-bottom: 20px;
+        }
+        button[onclick="uploadFirmware()"]:hover {
+            background: #009acd;
+        }
+    </style>
+</head>
+
 <body>
     <div id="init-modal" class="modal hidden">
       <div class="modal-content">
@@ -172,6 +199,8 @@ const char index_html_part2[] PROGMEM = R"rawliteral(
             <p>Exposure Shutter Speed: <span id="exp_s">0</span></p>
             <p>Exposure Gain: <span id="exp_g">0</span></p>
         </div>
+        <input type="file" id="firmwareFile">
+        <button onclick="uploadFirmware()">Upload Firmware</button>
         
     </div>
 )rawliteral";
@@ -276,8 +305,6 @@ const char index_html_part3[] PROGMEM = R"rawliteral(
 )rawliteral";
 
 const char index_html_part4[] PROGMEM = R"rawliteral(
-        // --- DOMContentLoaded: Button Event Setup ---
-
         // Poll function: if modalMode is true, keep polling until initialized and hide modal when done
         function pollInitStatus(modalMode = false) {
             fetch('/init_status')
@@ -303,7 +330,6 @@ const char index_html_part4[] PROGMEM = R"rawliteral(
         document.addEventListener('DOMContentLoaded', function() {
             pollInitStatus(false); // false = don't show modal
             setInterval(updateStatus, 5000); // Update status every second
-            // Button press/release for arrows
             document.getElementById('btn-up').addEventListener('mousedown', () => startArrow('up'));
             document.getElementById('btn-up').addEventListener('mouseup', () => stopArrow('up'));
             document.getElementById('btn-down').addEventListener('mousedown', () => startArrow('down'));
@@ -340,8 +366,6 @@ const char index_html_part4[] PROGMEM = R"rawliteral(
             document.getElementById('camera_command').addEventListener('change', sendCameraCommand);
 
             document.getElementById('stop-all-btn').addEventListener('click', stopAll);
-
-
         });
 
     </script>
@@ -558,6 +582,32 @@ const char index_html_part6[] PROGMEM = R"rawliteral(
             e.preventDefault();
         });
     });
+    </script>
+)rawliteral";
+
+const char index_html_part7[] PROGMEM = R"rawliteral(
+
+    <script>
+        async function uploadFirmware() {
+        const fileInput = document.getElementById("firmwareFile");
+        const file = fileInput.files[0];
+        if (!file) {
+            alert("Please select a firmware file.");
+            return;
+        }
+
+        const response = await fetch("/upload", {
+            method: "POST",
+            headers: {
+            "Content-Type": "application/octet-stream",
+            "Content-Length": file.size  // optional, but might help
+            },
+            body: file
+        });
+
+        const result = await response.text();
+        alert("Upload result:\n" + result);
+        }
     </script>
 
 </body>

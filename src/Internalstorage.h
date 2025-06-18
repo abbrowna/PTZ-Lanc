@@ -16,7 +16,7 @@
 
 FlashIAPBlockDevice flash(XIP_BASE + 0xF00000, 0x100000);
 mbed::FATFileSystem fs("ota");
-
+/*
 class FileSystemStorageClass : public ExternalOTAStorage {
 public:
 
@@ -74,4 +74,67 @@ public:
 
 private:
   FILE * file;
+};
+*/
+
+class FileSystemStorageClass : public ExternalOTAStorage {
+public:
+  virtual int open(int length) {
+    int err = -1;
+    if ((err = flash.init()) < 0) {
+      Serial.print(__FUNCTION__); Serial.print(": flash.init() failed with "); Serial.println(err);
+      return -1;
+    }
+
+    flash.erase(XIP_BASE + 0xF00000, 0x100000);
+
+    if ((err = fs.reformat(&flash)) != 0) {
+      Serial.print(__FUNCTION__); Serial.print(": fs.reformat() failed with "); Serial.println(err);
+      return -2;
+    }
+
+    file = fopen("/ota/UPDATE.BIN", "wb");
+    if (!file) {
+      Serial.print(__FUNCTION__); Serial.println(": fopen() failed");
+      return -3;
+    }
+
+    bufferIndex = 0;
+    return 1;
+  }
+
+  virtual size_t write(uint8_t c) {
+    buffer[bufferIndex++] = c;
+    if (bufferIndex == BUFFER_SIZE) {
+      if (flushBuffer() != BUFFER_SIZE) {
+        Serial.println("Flash write failed during buffer flush.");
+        return 0;
+      }
+      bufferIndex = 0;
+    }
+    return 1;
+  }
+
+  virtual void close() {
+    if (bufferIndex > 0) {
+      flushBuffer();  // flush remaining
+    }
+    fclose(file);
+  }
+
+  virtual void clear() {}
+
+private:
+  FILE *file;
+  static const size_t BUFFER_SIZE = 128;
+  uint8_t buffer[BUFFER_SIZE];
+  size_t bufferIndex = 0;
+
+  size_t flushBuffer() {
+    size_t written = fwrite(buffer, 1, bufferIndex, file);
+    if (written != bufferIndex) {
+      Serial.println("flushBuffer(): fwrite failed");
+    }
+    return written;
+  }
 };

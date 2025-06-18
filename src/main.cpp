@@ -286,6 +286,7 @@ void handleRoot(WiFiClient client) {
   client.print(index_html_part4);
   client.print(index_html_part5);
   client.print(index_html_part6);
+  client.print(index_html_part7);
 }
 
 void handleDirection(WiFiClient client, String request) {
@@ -487,6 +488,60 @@ void handleStopAll(WiFiClient client) {
   client.println("{\"status\":\"stopped\"}");
 }
 
+void handleOTAUpload(WiFiClient& client, long contentLength) {
+  Serial.println("Handling raw binary OTA upload");
+
+  if (contentLength <= 0) {
+    client.println("HTTP/1.1 400 Bad Request");
+    client.println("Content-type:text/plain");
+    client.println();
+    client.println("Missing or invalid Content-Length");
+    return;
+  }
+
+  if (FSStorage.open(contentLength) < 0) {
+    client.println("HTTP/1.1 500 Internal Server Error");
+    client.println("Content-type:text/plain");
+    client.println();
+    client.println("Failed to open OTA storage");
+    return;
+  }
+
+  long bytesWritten = 0;
+  long lastReportedKB = 0;
+
+  while (bytesWritten < contentLength && client.connected()) {
+    if (client.available()) {
+      uint8_t c = client.read();
+      if (FSStorage.write(c)) {
+        bytesWritten++;
+        if ((bytesWritten / 1024) > lastReportedKB) {
+          lastReportedKB = bytesWritten / 1024;
+          Serial.print("Written: ");
+          Serial.print(lastReportedKB);
+          Serial.println(" KB");
+        }
+      } else {
+        Serial.println("Write failed.");
+        break;
+      }
+    }
+  }
+
+  FSStorage.close();
+  Serial.print("OTA upload complete, bytes written: ");
+  Serial.println(bytesWritten);
+
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-type:text/plain");
+  client.println();
+  client.println("Upload complete. Rebooting to apply update...");
+
+  FSStorage.apply();
+}
+
+
+
 void reconnectWiFi() {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("WiFi disconnected. Attempting to reconnect...");
@@ -585,12 +640,17 @@ void loop() {
     if (client) {
         String currentLine = "";
         String request = "";
+        //String fullHeader = "";
+        //bool headersComplete = false;
+        long contentLength = -1;
         while (client.connected()) {
           if (client.available()) {
             char c = client.read();
             request += c;
+            //fullHeader += c; // Collect full header for debugging
             if (c == '\n') {
               if (currentLine.length() == 0) {
+                // End of headers
                 if (request.indexOf("GET /joystick") >= 0) {
                   handleJoystick(client, request);
                 } else if (request.indexOf("GET /keyboard") >= 0) {
@@ -607,12 +667,21 @@ void loop() {
                   handleInitCamera(client);
                 } else if (request.indexOf("GET /stopall") >= 0) {
                   handleStopAll(client);
+                } else if(request.indexOf("POST /upload") >= 0) {
+                  handleOTAUpload(client, contentLength);
+                } else if (request.indexOf("GET /") >= 0 || request.indexOf("GET /index.html") >= 0) {
+                  // Serve the main HTML page
+                  handleRoot(client);
                 }
                 else {
                   handleRoot(client);
                 }
                 break;
               } else {
+                currentLine.trim();
+                if (currentLine.startsWith("Content-Length:")) {
+                  contentLength = currentLine.substring(strlen("Content-Length:")).toInt();
+                }
                 currentLine = "";
               }
             } else if (c != '\r') {

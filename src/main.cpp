@@ -39,10 +39,10 @@ mbed::PwmOut rollSTEP(digitalPinToPinName(rollSTEPPin));
 */
 
 
-// const char* ssid = "MOTHAK IOT";
-// const char* password = "6Y6ADQM434H";
-const char* ssid = "Brownsville";
-const char* password = "ilyz6338";
+const char* ssid = "MOTHAK IOT";
+const char* password = "6Y6ADQM434H";
+// const char* ssid = "Brownsville";
+// const char* password = "ilyz6338";
 
 FileSystemStorageClass FSStorage;
 WiFiServer server(80);
@@ -89,7 +89,7 @@ bool keyboardPanActive = false;
 #define ROLL_GEAR_OUTPUT 344.0
 
 //default speeds per axis defined in degrees per second of the axis. 
-#define PAN_DEFAULT_SPEED 10.0 // degrees/sec
+#define PAN_DEFAULT_SPEED 5.0 // degrees/sec
 #define TILT_DEFAULT_SPEED 5.0 // degrees/sec
 #define ROLL_DEFAULT_SPEED 0.5 // degrees/sec
 
@@ -493,28 +493,28 @@ const unsigned long keyboardTimeout = 1300; // ms
 
 void handleKeypress(WiFiClient client, String request) {
     if (request.indexOf("/keyboard/up/on") >= 0) {
-        runTiltStepper(TILT_DEFAULT_SPEED, HIGH); // Change to default key speed
+        runTiltStepper(TILT_DEFAULT_SPEED/5, HIGH); // Change to default key speed
         keyboardTiltActive = true;
     } else if (request.indexOf("/keyboard/up/off") >= 0) {
         pwm_set_chan_level(TILT_SLICE, TILT_CHAN, 0);
         tiltStepperActive = false;
         keyboardTiltActive = false;
     } else if (request.indexOf("/keyboard/down/on") >= 0) {
-        runTiltStepper(TILT_DEFAULT_SPEED, LOW); // Change to default key speed
+        runTiltStepper(TILT_DEFAULT_SPEED/5, LOW); // Change to default key speed
         keyboardTiltActive = true;
     } else if (request.indexOf("/keyboard/down/off") >= 0) {
         pwm_set_chan_level(TILT_SLICE, TILT_CHAN, 0);
         tiltStepperActive = false;
         keyboardTiltActive = false;
     } else if (request.indexOf("/keyboard/left/on") >= 0) {
-        runPanStepper(PAN_DEFAULT_SPEED, HIGH); // Change to default key speed
+        runPanStepper(PAN_DEFAULT_SPEED/5, HIGH); // Change to default key speed
         keyboardPanActive = true;
     } else if (request.indexOf("/keyboard/left/off") >= 0) {
         pwm_set_chan_level(PAN_SLICE, PAN_CHAN, 0);
         panStepperActive = false;
         keyboardPanActive = false;
     } else if (request.indexOf("/keyboard/right/on") >= 0) {
-        runPanStepper(PAN_DEFAULT_SPEED, LOW); // Change to default key speed
+        runPanStepper(PAN_DEFAULT_SPEED/5, LOW); // Change to default key speed
         keyboardPanActive = true;
     } else if (request.indexOf("/keyboard/right/off") >= 0) {
         pwm_set_chan_level(PAN_SLICE, PAN_CHAN, 0);
@@ -837,13 +837,13 @@ void loop() {
             exp_g++;
         }
         else if (camera_command == PAN_TILT_SLOW){
-            runTiltStepper(TILT_DEFAULT_SPEED/10, true); // up, slow
+            runTiltStepper(TILT_DEFAULT_SPEED/25, true); // up, slow
         }
         else if (camera_command == PAN_TILT_MEDIUM){
-            runTiltStepper(TILT_DEFAULT_SPEED, true); // up, medium
+            runTiltStepper(TILT_DEFAULT_SPEED/5, true); // up, medium
         }
         else if (camera_command == PAN_TILT_FAST){
-            runTiltStepper(TILT_DEFAULT_SPEED*2, true); // up, fast
+            runTiltStepper(TILT_DEFAULT_SPEED, true); // up, fast
         }
         if(camera_command>8 && camera_command<13){
             up_arrow = false;
@@ -875,13 +875,13 @@ void loop() {
             exp_g--;
         }
         else if (camera_command == PAN_TILT_SLOW){
-            runTiltStepper(TILT_DEFAULT_SPEED/10, false); // down, slow
+            runTiltStepper(TILT_DEFAULT_SPEED/25, false); // down, slow
         }
         else if (camera_command == PAN_TILT_MEDIUM){
-            runTiltStepper(TILT_DEFAULT_SPEED, false); // down, medium
+            runTiltStepper(TILT_DEFAULT_SPEED/5, false); // down, medium
         }
         else if (camera_command == PAN_TILT_FAST){
-            runTiltStepper(TILT_DEFAULT_SPEED*2, false); // down, fast
+            runTiltStepper(TILT_DEFAULT_SPEED, false); // down, fast
         }
         if(camera_command>8 && camera_command<13){
             down_arrow = false;
@@ -907,13 +907,13 @@ void loop() {
             exp_g++;
         }
         else if(camera_command == PAN_TILT_SLOW){
-            runPanStepper(PAN_DEFAULT_SPEED/10, false); // right, slow
+            runPanStepper(PAN_DEFAULT_SPEED/25, false); // right, slow
         }
         else if(camera_command == PAN_TILT_MEDIUM){
-            runPanStepper(PAN_DEFAULT_SPEED, false); // right, medium
+            runPanStepper(PAN_DEFAULT_SPEED/5, false); // right, medium
         }
         else if(camera_command == PAN_TILT_FAST){
-            runPanStepper(PAN_DEFAULT_SPEED*2, false); // right, fast
+            runPanStepper(PAN_DEFAULT_SPEED, false); // right, fast
         }
         if(camera_command>8 && camera_command<13){
             right_arrow = false;
@@ -939,13 +939,13 @@ void loop() {
             exp_g--;
         }
         else if(camera_command == PAN_TILT_SLOW){
-            runPanStepper(PAN_DEFAULT_SPEED/10, true); // left, slow
+            runPanStepper(PAN_DEFAULT_SPEED/25, true); // left, slow
         }
         else if(camera_command == PAN_TILT_MEDIUM){
-            runPanStepper(PAN_DEFAULT_SPEED, true); // left, medium
+            runPanStepper(PAN_DEFAULT_SPEED/5, true); // left, medium
         }
         else if(camera_command == PAN_TILT_FAST){
-            runPanStepper(PAN_DEFAULT_SPEED*2, true); // left, fast
+            runPanStepper(PAN_DEFAULT_SPEED, true); // left, fast
         }
         if(camera_command>8 && camera_command<13){
             left_arrow = false;

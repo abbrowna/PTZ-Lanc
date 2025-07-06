@@ -1,4 +1,5 @@
 console.log('Script loaded');
+let statusInterval = null;
 
 // --- Stop All Directions ---
 function stopAll() {
@@ -118,7 +119,7 @@ function pollInitStatus(modalMode = false) {
 
 document.addEventListener('DOMContentLoaded', function() {
     pollInitStatus(false); // false = don't show modal
-    setInterval(updateStatus, 5000); // Update status every second
+    statusInterval = setInterval(updateStatus, 5000); // Update status every second
     document.getElementById('btn-up').addEventListener('mousedown', () => startArrow('up'));
     document.getElementById('btn-up').addEventListener('mouseup', () => stopArrow('up'));
     document.getElementById('btn-down').addEventListener('mousedown', () => startArrow('down'));
@@ -128,6 +129,19 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('btn-right').addEventListener('mousedown', () => startArrow('right'));
     document.getElementById('btn-right').addEventListener('mouseup', () => stopArrow('right'));
 
+    // Roll button event listeners
+    document.getElementById('btn-roll-ccw').addEventListener('mousedown', () => startRoll('ccw'));
+    document.getElementById('btn-roll-ccw').addEventListener('mouseup', () => stopRoll('ccw'));
+    document.getElementById('btn-roll-ccw').addEventListener('mouseleave', () => stopRoll('ccw'));
+    document.getElementById('btn-roll-ccw').addEventListener('touchstart', (e) => { e.preventDefault(); startRoll('ccw'); });
+    document.getElementById('btn-roll-ccw').addEventListener('touchend', (e) => { e.preventDefault(); stopRoll('ccw'); });
+
+    document.getElementById('btn-roll-cw').addEventListener('mousedown', () => startRoll('cw'));
+    document.getElementById('btn-roll-cw').addEventListener('mouseup', () => stopRoll('cw'));
+    document.getElementById('btn-roll-cw').addEventListener('mouseleave', () => stopRoll('cw'));
+    document.getElementById('btn-roll-cw').addEventListener('touchstart', (e) => { e.preventDefault(); startRoll('cw'); });
+    document.getElementById('btn-roll-cw').addEventListener('touchend', (e) => { e.preventDefault(); stopRoll('cw'); });
+    
     // Stop arrow on mouseleave/blur for all buttons
     ['up', 'down', 'left', 'right'].forEach(dir => {
         const btn = document.getElementById(`btn-${dir}`);
@@ -136,7 +150,15 @@ document.addEventListener('DOMContentLoaded', function() {
         btn.addEventListener('blur', () => stopArrow(dir));
     });
 
-    // disable context menu for buttons
+    // Stop roll on mouseleave/blur for roll buttons
+    ['ccw', 'cw'].forEach(dir => {
+        const btn = document.getElementById(`btn-roll-${dir}`);
+        if (!btn) return;
+        btn.addEventListener('mouseleave', () => stopRoll(dir));
+        btn.addEventListener('blur', () => stopRoll(dir));
+    });
+
+    // disable context menu for arrow buttons
     ['up', 'down', 'left', 'right'].forEach(dir => {
         const btn = document.getElementById(`btn-${dir}`);
         if (!btn) return;
@@ -152,9 +174,30 @@ document.addEventListener('DOMContentLoaded', function() {
         btn.addEventListener('blur', () => stopArrow(dir));
     });
 
+    // disable context menu for roll buttons
+    ['ccw', 'cw'].forEach(dir => {
+        const btn = document.getElementById(`btn-roll-${dir}`);
+        if (!btn) return;
+        btn.addEventListener('touchstart', (e) => {
+            e.preventDefault(); // Prevents context menu and scrolling
+            startRoll(dir);
+        });
+        btn.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            stopRoll(dir);
+        });
+        btn.addEventListener('mouseleave', () => stopRoll(dir));
+        btn.addEventListener('blur', () => stopRoll(dir));
+    });
+
     document.getElementById('camera_command').addEventListener('change', sendCameraCommand);
 
     document.getElementById('stop-all-btn').addEventListener('click', stopAll);
+    document.getElementById('reset-btn').addEventListener('click', function() {
+    fetch('/reset', { method: 'POST' })
+        .then(() => alert('Board will reset now!'))
+        .catch(() => alert('Reset failed!'));   
+    });
 
     // Joystick logic
     const canvas = document.getElementById('joystick');
@@ -304,6 +347,15 @@ document.addEventListener('DOMContentLoaded', function() {
         stopJoystick();
         e.preventDefault();
     });
+    document.getElementById('reset-btn').addEventListener('click', function() {
+        stopAllPolling();
+        showResetModal();
+        fetch('/reset', { method: 'POST' })
+            .catch(() => {}); // Ignore errors, board will reset anyway
+        setTimeout(() => {
+            window.location.reload();
+        }, 15000); // Adjust if your board takes longer to reboot
+    });
 });
 function convertToKelvin(index) {
     const minKelvin = 2000;
@@ -325,4 +377,20 @@ function convertExpS(index) {
         "1/6", "1/12", "1/25", "1/50", "1/120", "1/250", "1/500", "1/1000", "1/2000"
     ];
     return expSValues[index] || "Unknown";
+}
+
+function startRoll(direction) {
+    fetch(`/roll/${direction}/on`).catch(()=>{});
+}
+function stopRoll(direction) {
+    fetch(`/roll/${direction}/off`).catch(()=>{});
+}
+function showResetModal() {
+    document.getElementById('reset-modal').classList.remove('hidden');
+}
+
+function stopAllPolling() {
+    if (statusInterval) clearInterval(statusInterval);
+    statusInterval = null;
+    // Add any other polling/intervals you use here
 }

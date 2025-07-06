@@ -13,6 +13,12 @@
         <p>Initializing camera, please wait...</p>
       </div>
     </div>
+    <div id="reset-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="spinner"></div>
+            <p>Resetting board...</p>
+        </div>
+    </div>
     <div class="container">
         <h1>Camera 1</h1>
         <div class="dropdown-container">
@@ -42,7 +48,26 @@
             <button id="btn-right" style="grid-area: 2 / 3;">Right</button>
             <button id="btn-down" style="grid-area: 3 / 2;">Down</button>
         </div>
+        <div class="roll-controls">
+            <button id="btn-roll-ccw" class="roll-btn" title="Roll Counterclockwise">
+                <svg viewBox="0 0 60 60" width="48" height="48">
+                    <path d="M50,40
+                            A20,20 0 0,1 20,40"
+                        fill="none" stroke="#fff" stroke-width="5"/>
+                    <polygon points="20,40 25,35 25,45" fill="#fff"/>
+                </svg>
+            </button>
+            <button id="btn-roll-cw" class="roll-btn" title="Roll Clockwise">
+                <svg viewBox="0 0 60 60" width="48" height="48">
+                    <path d="M10,40
+                            A20,20 0 0,0 40,40"
+                        fill="none" stroke="#fff" stroke-width="5"/>
+                    <polygon points="40,40 35,35 35,45" fill="#fff"/>
+                </svg>
+            </button>
+        </div>
         <button id="stop-all-btn" style="margin-top:20px;">Stop All</button>
+        <button id="reset-btn" style="margin-top:20px;">Reset</button>
         <div id="joystick-container" style="margin: 40px auto; width: 200px; height: 200px; position: relative;">
             <canvas id="joystick" width="200" height="200" style="background: #e0e0e0; border-radius: 10px;"></canvas>
             <div style="text-align:center;margin-top:8px;">Virtual Joystick</div>

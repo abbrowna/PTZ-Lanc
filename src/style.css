@@ -111,3 +111,30 @@ body {
     accent-color: #00bfff;
     margin-top: 8px;
 }
+.roll-controls {
+    display: flex;
+    justify-content: center;
+    gap: 60px;
+    margin: 30px 0 10px 0;
+}
+.roll-btn {
+    background: #00bfff;
+    border: none;
+    border-radius: 50%;
+    width: 64px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px #0001;
+    cursor: pointer;
+    transition: background 0.2s;
+    outline: none;
+}
+.roll-btn:active,
+.roll-btn:focus {
+    background: #009acd;
+}
+.roll-btn svg {
+    display: block;
+}

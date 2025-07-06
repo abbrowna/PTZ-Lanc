@@ -28,8 +28,8 @@ bool camera_initialized = false;
 #define tiltDirPin 2
 #define tiltStepPin 3
 #define rollEnablePin 8
-#define rollDirPin 6
-#define rollSTEPPin 7
+#define rollDirPin 7
+#define rollSTEPPin 6 //please note due to hardware bug of the rp2040 on slice 1 channel 1
 
 /*Create PWM objects for stepper motors*/
 /*
@@ -39,10 +39,10 @@ mbed::PwmOut rollSTEP(digitalPinToPinName(rollSTEPPin));
 */
 
 
-const char* ssid = "MOTHAK IOT";
-const char* password = "6Y6ADQM434H";
-// const char* ssid = "Brownsville";
-// const char* password = "ilyz6338";
+// const char* ssid = "MOTHAK IOT";
+// const char* password = "6Y6ADQM434H";
+const char* ssid = "Brownsville";
+const char* password = "ilyz6338";
 
 FileSystemStorageClass FSStorage;
 WiFiServer server(80);
@@ -91,7 +91,7 @@ bool keyboardPanActive = false;
 //default speeds per axis defined in degrees per second of the axis. 
 #define PAN_DEFAULT_SPEED 5.0 // degrees/sec
 #define TILT_DEFAULT_SPEED 5.0 // degrees/sec
-#define ROLL_DEFAULT_SPEED 0.5 // degrees/sec
+#define ROLL_DEFAULT_SPEED 0.2 // degrees/sec
 
 // Stepper and microstepping
 #define STEPPER_DEG_PER_STEP 1.8
@@ -630,7 +630,26 @@ void handleOTAUpload(WiFiClient& client, long contentLength) {
   FSStorage.apply();
 }
 
+void handleRoll(WiFiClient client, String request) {
+    if (request.indexOf("GET /roll/ccw/on") >= 0) {
+        runrollStepper(ROLL_DEFAULT_SPEED, false); // CCW
+        rollStepperActive = true;
+    } else if (request.indexOf("GET /roll/ccw/off") >= 0) {
+        pwm_set_chan_level(ROLL_SLICE, ROLL_CHAN, 0);
+        rollStepperActive = false;
+    } else if (request.indexOf("GET /roll/cw/on") >= 0) {
+        runrollStepper(ROLL_DEFAULT_SPEED, true); // CW
+        rollStepperActive = true;
+    } else if (request.indexOf("GET /roll/cw/off") >= 0) {
+        pwm_set_chan_level(ROLL_SLICE, ROLL_CHAN, 0);
+        rollStepperActive = false;
+    }
 
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-type:application/json");
+    client.println();
+    client.println("{\"status\":\"ok\"}");
+}
 
 void reconnectWiFi() {
   if (WiFi.status() != WL_CONNECTED) {
@@ -691,6 +710,16 @@ void setup() {
   ROLL_SLICE = pwm_gpio_to_slice_num(digitalPinToPinName(rollSTEPPin));
   ROLL_CHAN  = pwm_gpio_to_channel(digitalPinToPinName(rollSTEPPin));
 
+  Serial.print("panStepGPIO");Serial.println(digitalPinToPinName(panStepPin));
+  Serial.print("tiltStepGPIO");Serial.println(digitalPinToPinName(tiltStepPin));
+  Serial.print("rollStepGPIO");Serial.println(digitalPinToPinName(rollSTEPPin));
+  Serial.print("PAN_SLICE: "); Serial.println(PAN_SLICE);
+  Serial.print("PAN_CHAN: "); Serial.println(PAN_CHAN);
+  Serial.print("TILT_SLICE: "); Serial.println(TILT_SLICE);
+  Serial.print("TILT_CHAN: "); Serial.println(TILT_CHAN);
+  Serial.print("ROLL_SLICE: "); Serial.println(ROLL_SLICE);
+  Serial.print("ROLL_CHAN: "); Serial.println(ROLL_CHAN);
+
   pwm_config cfg = pwm_get_default_config();
   pwm_config_set_clkdiv(&cfg, 250.0f);     // 500 kHz clock
   pwm_config_set_wrap(&cfg, 1000);         // dummy wrap, will be overwritten
@@ -713,7 +742,7 @@ void setup() {
     Serial.print(".");
   }
 
-  Serial.println("\nConnected to WiFi");
+  Serial.println("Connected to WiFi");
   Serial.print("IP Address: ");
   Serial.println(WiFi.localIP());
   ArduinoOTA.begin(WiFi.localIP(), "Arduino", "password", FSStorage);
@@ -746,6 +775,9 @@ void loop() {
                 } 
                 else if (request.indexOf("GET /direction") >= 0) {
                   handleDirection(client, request);
+                }
+                else if (request.indexOf("GET /roll") >= 0) {
+                    handleRoll(client, request);
                 } 
                 else if (request.indexOf("GET /camera_command") >= 0) {
                   handleCameraCommand(client, request);
@@ -787,6 +819,15 @@ void loop() {
                 }
                 else if (request.indexOf("GET /app.js") >= 0) {
                   handleJS(client);
+                }
+                else if (request.indexOf("POST /reset") >= 0) {
+                  client.println("HTTP/1.1 200 OK");
+                  client.println("Content-type:text/plain");
+                  client.println();
+                  client.println("Resetting...");
+                  client.flush();
+                  delay(100); // Allow response to be sent
+                  NVIC_SystemReset(); // Reset the MCU
                 }                 
                 else if (request.indexOf("GET /") >= 0 || request.indexOf("GET /index.html") >= 0) {
                   // Serve the main HTML page
@@ -953,7 +994,7 @@ void loop() {
     }
 
     /*******  OTHER STUFF TO DO IN VOID LOOP **********/
-    if(!left_arrow && !right_arrow && !up_arrow && !down_arrow && !joystickActive && !keyboardPanActive && !keyboardTiltActive) {
+    if(!left_arrow && !right_arrow && !up_arrow && !down_arrow && !joystickActive && !keyboardPanActive && !keyboardTiltActive && !rollStepperActive) {
         pwm_set_chan_level(PAN_SLICE, PAN_CHAN, 0);
         pwm_set_chan_level(TILT_SLICE, TILT_CHAN, 0);
         pwm_set_chan_level(ROLL_SLICE, ROLL_CHAN, 0);

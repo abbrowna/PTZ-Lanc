@@ -138,3 +138,13 @@ body {
 .roll-btn svg {
     display: block;
 }
+#camera-heading
+{
+    display:inline-block;
+    cursor:pointer;
+}
+#hostname-input{
+    display:none;
+    margin-left:10px;
+    width:180px;
+}

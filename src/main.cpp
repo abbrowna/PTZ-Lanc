@@ -7,7 +7,9 @@
 #include <SFU.h>
 #include "Internalstorage.h"
 #include "staticStorage.h"
+#include "persistentStorage.h"
 #include "hardware/pwm.h"
+#include <WiFiUdp.h>
 
 /* Declare state variables*/
 int camera_command;
@@ -46,6 +48,15 @@ const char* password = "ilyz6338";
 
 FileSystemStorageClass FSStorage;
 WiFiServer server(80);
+
+WiFiUDP mdnsUDP;
+const IPAddress MDNS_MULTICAST(224, 0, 0, 251);
+const uint16_t MDNS_PORT = 5353;
+String mdns_hostname;
+
+WiFiUDP claimUDP;
+const uint16_t CLAIM_PORT = 5354;
+
 
 int bitDuration = 104; // Duration of one LANC bit in microseconds
 
@@ -528,7 +539,11 @@ void handleKeypress(WiFiClient client, String request) {
 }
 
 void handleStatus(WiFiClient client) {
-  String json = "{\"wb_k\":" + String(wb_k) + ",\"exp_f\":" + String(exp_f) + ",\"exp_s\":" + String(exp_s) + ",\"exp_g\":" + String(exp_g) + "}";
+  String json = "{\"wb_k\":" + String(wb_k) +
+                ",\"exp_f\":" + String(exp_f) +
+                ",\"exp_s\":" + String(exp_s) +
+                ",\"exp_g\":" + String(exp_g) +
+                ",\"hostname\":\"" + mdns_hostname + "\"}";
   client.println("HTTP/1.1 200 OK");
   client.println("Content-type:application/json");
   client.println();
@@ -627,7 +642,7 @@ void handleOTAUpload(WiFiClient& client, long contentLength) {
   client.println();
   client.println("Upload complete. Rebooting to apply update...");
 
-  FSStorage.apply();
+  NVIC_SystemReset();
 }
 
 void handleRoll(WiFiClient client, String request) {
@@ -651,15 +666,119 @@ void handleRoll(WiFiClient client, String request) {
     client.println("{\"status\":\"ok\"}");
 }
 
+void pollMDNS() {
+    int packetSize = mdnsUDP.parsePacket();
+    if (packetSize) {
+        uint8_t buffer[512];
+        int len = mdnsUDP.read(buffer, sizeof(buffer));
+        if (len < 12) return; // Not a valid DNS packet
+
+        // Parse QNAME from question section (starts at offset 12)
+        int idx = 12;
+        String qname = "";
+        while (idx < len && buffer[idx] != 0) {
+            int labelLen = buffer[idx++];
+            if (labelLen == 0 || idx + labelLen > len) break;
+            for (int i = 0; i < labelLen; i++) {
+                qname += (char)buffer[idx++];
+            }
+            if (buffer[idx] != 0) qname += ".";
+        }
+        idx++; // Skip the null byte
+
+        // Check if the query is for our hostname
+        String expected = String(mdns_hostname) + ".local";
+        expected.toLowerCase();
+        qname.toLowerCase();
+        if (qname != expected) return;
+
+        // Copy the question section (QNAME, QTYPE, QCLASS)
+        int questionLen = idx + 4 - 12;
+        if (questionLen <= 0 || idx + 4 > len) return;
+
+        // Build response
+        uint8_t response[512];
+        // Transaction ID
+        response[0] = buffer[0];
+        response[1] = buffer[1];
+        // Flags: response, authoritative answer
+        response[2] = 0x84;
+        response[3] = 0x00;
+        // Questions: 1
+        response[4] = 0x00;
+        response[5] = 0x01;
+        // Answer RRs: 1
+        response[6] = 0x00;
+        response[7] = 0x01;
+        // Authority RRs: 0
+        response[8] = 0x00;
+        response[9] = 0x00;
+        // Additional RRs: 0
+        response[10] = 0x00;
+        response[11] = 0x00;
+        // Copy question section
+        memcpy(response + 12, buffer + 12, questionLen);
+        int respIdx = 12 + questionLen;
+        // Answer section
+        // Name: pointer to question (0xC00C)
+        response[respIdx++] = 0xC0;
+        response[respIdx++] = 0x0C;
+        // Type: A (host address)
+        response[respIdx++] = 0x00;
+        response[respIdx++] = 0x01;
+        // Class: IN, flush cache
+        response[respIdx++] = 0x80;
+        response[respIdx++] = 0x01;
+        // TTL: 120 seconds
+        response[respIdx++] = 0x00;
+        response[respIdx++] = 0x00;
+        response[respIdx++] = 0x00;
+        response[respIdx++] = 0x78;
+        // Data length: 4
+        response[respIdx++] = 0x00;
+        response[respIdx++] = 0x04;
+        // Address: (your IP)
+        IPAddress ip = WiFi.localIP();
+        response[respIdx++] = ip[0];
+        response[respIdx++] = ip[1];
+        response[respIdx++] = ip[2];
+        response[respIdx++] = ip[3];
+
+        // Send response to multicast address/port
+        mdnsUDP.beginPacket(MDNS_MULTICAST, MDNS_PORT);
+        mdnsUDP.write(response, respIdx);
+        mdnsUDP.endPacket();
+
+        Serial.print("Sent mDNS response for: ");
+        Serial.println(qname);
+    }
+}
+
 void reconnectWiFi() {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("WiFi disconnected. Attempting to reconnect...");
     WiFi.disconnect();
+    WiFi.setHostname(mdns_hostname.c_str());
     WiFi.begin(ssid, password);
+    int retryCount = 0;
+    int OverallRetryCount = 0;
+    while (WiFi.status() != WL_CONNECTED ) {
+      delay(1000);
+      retryCount++;
+      OverallRetryCount++;
+      if (OverallRetryCount > 180) {
+        Serial.println("Overall retry limit reached. Stopping reconnection attempts.");
+        //Attempt a system reset after 3 minutes of tying
+        NVIC_SystemReset();
+      }
+      if (retryCount > 4){
+        Serial.println("Failed to connect to WiFi. Retrying...");
+        retryCount = 0;
+        WiFi.disconnect();
+        delay(1000);
+        WiFi.begin(ssid, password);
 
-    unsigned long startAttemptTime = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 10000) { // 10-second timeout
-      delay(500);
+      }
       Serial.print(".");
     }
 
@@ -667,12 +786,48 @@ void reconnectWiFi() {
       Serial.println("\nReconnected to WiFi.");
       Serial.print("IP Address: ");
       Serial.println(WiFi.localIP());
+      mdnsUDP.stop();
+      delay(100);
+      mdnsUDP.beginMulticast(MDNS_MULTICAST, MDNS_PORT);
     } else {
       Serial.println("\nFailed to reconnect to WiFi.");
     }
   }
 }
 
+void handleHostnameRequest(WiFiClient& client, String request) {
+    int startIdx = request.indexOf("/hostname/request/") + strlen("/hostname/request/");
+    int endIdx = request.indexOf(' ', startIdx);
+    String newHost = request.substring(startIdx, endIdx);
+    if (newHost.length() == 0) {
+        client.println("HTTP/1.1 400 Bad Request");
+        client.println("Content-type:application/json");
+        client.println();
+        client.println("{\"status\":\"error\",\"msg\":\"No hostname provided\"}");
+        return;
+    }
+    //Validate hostname length
+    if (newHost.length() > HOSTNAME_SIZE - 1) {
+        client.println("HTTP/1.1 400 Bad Request");
+        client.println("Content-type:application/json");
+        client.println();
+        client.println("{\"status\":\"error\",\"msg\":\"Hostname too long\"}");
+        return;
+    }
+    //Send response before changing hostname
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-type:application/json");
+    client.println();
+    client.println("{\"status\":\"ok\"}");
+    //Write new hostname to flash storage
+    Serial.println("Handling hostname request: " + newHost);
+    writeHostnameToPersistent(newHost.c_str());
+    WiFi.disconnect();
+    mdnsUDP.stop();
+    delay(1000);
+    mdns_hostname = newHost;
+    return;
+}
 
 void setup() {
   camera_command = 1;
@@ -731,21 +886,36 @@ void setup() {
   pwm_set_enabled(TILT_SLICE, true);
   pwm_set_enabled(ROLL_SLICE, true);
 
-  // Connect to WiFi
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
-  WiFi.setHostname("camera1");
-  WiFi.begin(ssid, password);
-
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    Serial.print(".");
+  //Fetch hostname from flash storage
+  // If not set, use default based on MAC address
+  char hostnameBuf[HOSTNAME_SIZE];
+  readHostnameFromPersistent(hostnameBuf);
+  Serial.print("read hostname from persistent: ");
+  Serial.println(hostnameBuf);
+  if (hostnameBuf[0] == 0xFF || hostnameBuf[0] == 0 || strlen(hostnameBuf) == 0) {
+      // Not set, use default
+      uint8_t mac[6];
+      WiFi.macAddress(mac);
+      String macStr = String(mac[0], HEX) + String(mac[1], HEX) + String(mac[2], HEX) +
+                      String(mac[3], HEX) + String(mac[4], HEX) + String(mac[5], HEX);
+      macStr.toLowerCase();
+      macStr.replace(":", "");
+      mdns_hostname = "camera-" + macStr.substring(0, 6);
+      writeHostnameToPersistent(mdns_hostname.c_str());
+  } else {
+      mdns_hostname = String(hostnameBuf);
   }
-
+  
+  // Connect to WiFi
+  reconnectWiFi();
+  
   Serial.println("Connected to WiFi");
   Serial.print("IP Address: ");
   Serial.println(WiFi.localIP());
-  ArduinoOTA.begin(WiFi.localIP(), "Arduino", "password", FSStorage);
+  Serial.print("Hostname: ");
+  Serial.println(mdns_hostname);
+
+  //ArduinoOTA.begin(WiFi.localIP(), "Arduino", "password", FSStorage);
   
   // Start the server
   server.begin();
@@ -754,7 +924,8 @@ void setup() {
 
 void loop() {
     reconnectWiFi(); // Check and reconnect to WiFi if disconnected
-    ArduinoOTA.poll();
+    //ArduinoOTA.poll();
+    pollMDNS(); // Poll for mDNS queries
     WiFiClient client = server.available();
     if (client) {
         String currentLine = "";
@@ -797,6 +968,9 @@ void loop() {
                 else if (request.indexOf("GET /admin") >= 0) {
                   handleAdmin(client);
                 }
+                else if (request.indexOf("GET /admin") >= 0) {
+                  handleAdmin(client);
+                }
                 else if (request.indexOf("POST /upload_html") >= 0) {
                   handleStaticUpload(client, contentLength, StaticStorageClass::HTML, "HTML");
                 }
@@ -808,6 +982,9 @@ void loop() {
                 }
                 else if(request.indexOf("POST /upload") >= 0) {
                   handleOTAUpload(client, contentLength);
+                }
+                else if (request.indexOf("POST /hostname/request/") >= 0) {
+                    handleHostnameRequest(client, request);
                 }
                 else if (request.indexOf("GET /favicon.ico") >= 0) {
                     client.println("HTTP/1.1 204 No Content");

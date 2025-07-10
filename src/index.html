@@ -19,8 +19,15 @@
             <p>Resetting board...</p>
         </div>
     </div>
+    <div id="hostname-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="spinner"></div>
+            <p id="hostname-loader-message">Changing hostname...</p>
+        </div>
+    </div>
     <div class="container">
-        <h1>Camera 1</h1>
+    <h1 id="camera-heading">Unknown Camera</h1>
+    <input id="hostname-input" type="text" placeholder="enter new hostname"/>
         <div class="dropdown-container">
             <label for="camera_command">Select action</label>
             <select id="camera_command" name="camera_command">

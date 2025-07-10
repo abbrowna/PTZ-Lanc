@@ -42,10 +42,8 @@ function updateStatus() {
             document.getElementById('exp_f').innerText = convertExpF(data.exp_f);
             document.getElementById('exp_s').innerText = convertExpS(data.exp_s);
             document.getElementById('exp_g').innerText = data.exp_g;
-            if (!data.initialized) {
-                document.getElementById('init-warning').style.display = 'block';
-            } else {
-                document.getElementById('init-warning').style.display = 'none';
+            if (data.hostname) {
+                document.getElementById('camera-heading').innerText = data.hostname;
             }
         })
         .catch(error => console.error('Error fetching status:', error));
@@ -356,6 +354,68 @@ document.addEventListener('DOMContentLoaded', function() {
             window.location.reload();
         }, 15000); // Adjust if your board takes longer to reboot
     });
+    const heading = document.getElementById('camera-heading');
+    const hostnameInput = document.getElementById('hostname-input');
+
+    // Show input when heading is clicked
+    heading.addEventListener('click', () => {
+        hostnameInput.value = '';
+        hostnameInput.style.display = 'inline-block';
+        hostnameInput.placeholder = 'enter new hostname';
+        hostnameInput.focus();
+    });
+
+    // Hide input on blur (optional, but keeps UI clean)
+    hostnameInput.addEventListener('blur', () => {
+        setTimeout(() => { hostnameInput.style.display = 'none'; }, 200);
+    });
+
+    // Submit on Enter or "done"
+    hostnameInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            submitHostnameChange();
+        }
+    });
+
+    function submitHostnameChange() {
+        const newHost = hostnameInput.value.trim();
+        if (!newHost) return;
+        showHostNameModal('Changing hostname to: ' + newHost);
+        fetch(`/hostname/request/${encodeURIComponent(newHost)}`, {
+            method: 'POST'
+        })
+        .then(r => {
+            if (!r.ok) throw new Error('Network response was not ok');
+            return r.json();
+        })
+        .then(data => {
+            let msg = '';
+            if (data.status === 'ok') {
+                msg = 'Hostname changed successfully! Reloading...';
+            } else if (data.status === 'swapped') {
+                msg = 'Hostname swapped with device: ' + data.swapped_with + '. Reloading...';
+            } else if (data.status === 'duplicate') {
+                msg = 'Hostname already taken and could not swap.';
+            } else {
+                msg = 'Failed to change hostname.';
+            }
+            document.getElementById('hostname-loader-message').innerText = msg;
+            if (data.status === 'ok' || data.status === 'swapped') {
+                setTimeout(() => {
+                    window.location.href = `http://${newHost}.local/`;
+                }, 1500);
+            } else {
+                setTimeout(hideHostNameModal, 2000);
+            }
+            hostnameInput.style.display = 'none';
+        })
+        .catch((e) => {
+            document.getElementById('hostname-loader-message').innerText = 'Failed to change hostname.';
+            setTimeout(hideHostNameModal, 2000);
+            hostnameInput.style.display = 'none';
+        });
+    }
 });
 function convertToKelvin(index) {
     const minKelvin = 2000;
@@ -387,6 +447,13 @@ function stopRoll(direction) {
 }
 function showResetModal() {
     document.getElementById('reset-modal').classList.remove('hidden');
+}
+function showHostNameModal(message) {
+    document.getElementById('hostname-loader-message').innerText = message || 'Hosname change requested...';
+    document.getElementById('hostname-modal').classList.remove('hidden');
+}
+function hideHostNameModal() {
+    document.getElementById('hostname-modal').classList.add('hidden');
 }
 
 function stopAllPolling() {

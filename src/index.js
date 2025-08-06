@@ -24,8 +24,7 @@ function stopArrow(direction) {
 }
 
 // --- Camera Command Dropdown ---
-function sendCameraCommand() {
-    const command = document.getElementById('camera_command').value;
+function sendCameraCommand(command) {
     const endpoint = `/camera_command/${command}`;
     fetch(endpoint)
         .then(response => response.json())
@@ -188,52 +187,184 @@ document.addEventListener('DOMContentLoaded', function() {
         btn.addEventListener('blur', () => stopRoll(dir));
     });
 
-    document.getElementById('camera_command').addEventListener('change', sendCameraCommand);
-
     document.getElementById('stop-all-btn').addEventListener('click', stopAll);
     document.getElementById('reset-btn').addEventListener('click', function() {
     fetch('/reset', { method: 'POST' })
-        .then(() => alert('Board will reset now!'))
         .catch(() => alert('Reset failed!'));   
+    });
+    document.getElementById('init-btn').addEventListener('click', function() {
+        document.getElementById('init-modal').classList.remove('hidden');
+        document.getElementById('init-warning').style.display = 'block';
+        pollInitStatus(true); // true = show modal
     });
 
     // Joystick logic
-    const canvas = document.getElementById('joystick');
-    const ctx = canvas.getContext('2d');
-    const center = { x: 100, y: 100 };
+
+    const joystick = document.getElementById('joystick');
+    const stick = document.getElementById('joystick__stick');
+    const joystickRect = joystick.getBoundingClientRect();
+    const radius = joystick.offsetWidth / 2;
+    const stickRadius = stick.offsetWidth / 2;
+    const JOYSTICK_THRESHOLD = 0.1; // Minimum change required to send a new request
+    let lastJoystickSend = 0;
+    let pendingJoystick = null;
+
+
     let dragging = false;
     let lastSent = { pan: 0, tilt: 0 };
 
-    // --- Joystick sensitivity threshold ---
-    const JOYSTICK_THRESHOLD = 0.1; // Minimum change required to send a new request
-
-    function drawJoystick(pos) {
-        ctx.clearRect(0, 0, 200, 200);
-        // Draw grid
-        ctx.strokeStyle = '#bbb';
-        ctx.beginPath();
-        ctx.moveTo(100, 0); ctx.lineTo(100, 200);
-        ctx.moveTo(0, 100); ctx.lineTo(200, 100);
-        ctx.stroke();
-        // Draw center
-        ctx.beginPath();
-        ctx.arc(100, 100, 10, 0, 2 * Math.PI);
-        ctx.fillStyle = '#00bfff';
-        ctx.fill();
-        // Draw stick position
-        if (pos) {
-            ctx.beginPath();
-            ctx.arc(pos.x, pos.y, 15, 0, 2 * Math.PI);
-            ctx.fillStyle = '#009acd';
-            ctx.fill();
+    function getEventPos(e) {
+        const rect = joystick.getBoundingClientRect(); // Always get fresh rect
+        let x, y;
+        if (e.touches) {
+            x = e.touches[0].clientX - rect.left;
+            y = e.touches[0].clientY - rect.top;
+        } else {
+            x = e.clientX - rect.left;
+            y = e.clientY - rect.top;
         }
+        // Clamp to joystick bounds
+        x = Math.max(0, Math.min(joystick.offsetWidth, x));
+        y = Math.max(0, Math.min(joystick.offsetHeight, y));
+        return { x, y };
     }
 
-    drawJoystick();
+    function moveStick(pos) {
+        // Center of joystick
+        const center = { x: radius, y: radius };
+        // Offset from center
+        let dx = pos.x - center.x;
+        let dy = pos.y - center.y;
+        // Limit stick so its center stays within joystick circle
+        const maxDist = radius - stickRadius;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > maxDist) {
+            dx = dx * maxDist / dist;
+            dy = dy * maxDist / dist;
+        }
+        // Move stick
+        stick.style.left = "50%";
+        stick.style.top = "50%";
+        stick.style.transform = `translate(${dx}px, ${dy}px)`;
+        // Send normalized joystick values (-1 to 1)
+        sendJoystickCommandThrottled(dx / maxDist, dy / maxDist);
+
+        // Direction and magnitude for the LEDs 
+        const angle = Math.atan2(dy, dx); // -PI to PI
+        const magnitude = Math.min(dist / maxDist, 1); // 0 to 1
+
+        // How many dots to activate on each side of the main direction
+        let activeSpan = 0;
+        if (magnitude > 0.875) activeSpan = 3;
+        else if (magnitude > 0.625) activeSpan = 2;
+        else if (magnitude > 0.375) activeSpan = 1;
+        else if (magnitude > 0.125) activeSpan = 0;
+        else activeSpan = -1; // No dots
+
+        // Find the main direction dot
+        let mainIdx = Math.round((angle < 0 ? angle + 2 * Math.PI : angle) / (2 * Math.PI) * DOT_COUNT) % DOT_COUNT;
+
+        // Clear all dots
+        dots.forEach(dot => dot.classList.remove('active'));
+
+        if (activeSpan >= 0 && magnitude > 0.125) {
+            // Activate main dot and neighbors
+            for (let offset = -activeSpan; offset <= activeSpan; offset++) {
+                let idx = (mainIdx + offset + DOT_COUNT) % DOT_COUNT;
+                dots[idx].classList.add('active');
+            }
+        }
+    }
+    const dots = [];
+    function resetStick() {
+        stick.style.left = "50%";
+        stick.style.top = "50%";
+        stick.style.transform = "translate(0%, 0%)";
+        sendJoystickCommandThrottled(0, 0);
+        dots.forEach(dot => dot.classList.remove('active'));
+
+    }
+
+    joystick.addEventListener('mousedown', function(e) {
+        dragging = true;
+        moveStick(getEventPos(e));
+    });
+    joystick.addEventListener('mousemove', function(e) {
+        if (dragging) moveStick(getEventPos(e));
+    });
+    joystick.addEventListener('mouseup', function(e) {
+        dragging = false;
+        resetStick();
+    });
+    joystick.addEventListener('mouseleave', function(e) {
+        dragging = false;
+        resetStick();
+    });
+    joystick.addEventListener('touchstart', function(e) {
+        dragging = true;
+        moveStick(getEventPos(e));
+        e.preventDefault();
+    });
+    joystick.addEventListener('touchmove', function(e) {
+        if (dragging) moveStick(getEventPos(e));
+        e.preventDefault();
+    });
+    joystick.addEventListener('touchend', function(e) {
+        dragging = false;
+        resetStick();
+        e.preventDefault();
+    });
+    joystick.addEventListener('touchcancel', function(e) {
+        dragging = false;
+        resetStick();
+        e.preventDefault();
+    });
+    joystick.setAttribute('draggable', 'false');
+    joystick.addEventListener('dragstart', function(e) {
+        e.preventDefault();
+    });
+    stick.setAttribute('draggable', 'false');
+    stick.addEventListener('dragstart', function(e) {
+        e.preventDefault();
+    });
+
+    // Initialize stick position
+    resetStick();
+    
+    // const canvas = document.getElementById('joystick');
+    // const ctx = canvas.getContext('2d');
+    // const center = { x: 100, y: 100 };
+    
+
+
+
+    // function drawJoystick(pos) {
+    //     ctx.clearRect(0, 0, 200, 200);
+    //     // Draw grid
+    //     ctx.strokeStyle = '#bbb';
+    //     ctx.beginPath();
+    //     ctx.moveTo(100, 0); ctx.lineTo(100, 200);
+    //     ctx.moveTo(0, 100); ctx.lineTo(200, 100);
+    //     ctx.stroke();
+    //     // Draw center
+    //     ctx.beginPath();
+    //     ctx.arc(100, 100, 10, 0, 2 * Math.PI);
+    //     ctx.fillStyle = '#00bfff';
+    //     ctx.fill();
+    //     // Draw stick position
+    //     if (pos) {
+    //         ctx.beginPath();
+    //         ctx.arc(pos.x, pos.y, 15, 0, 2 * Math.PI);
+    //         ctx.fillStyle = '#009acd';
+    //         ctx.fill();
+    //     }
+    // }
+
+    //drawJoystick();
+
 
     // Throttle joystick requests to at most one every 50ms
-    let lastJoystickSend = 0;
-    let pendingJoystick = null;
+
 
     function sendJoystickCommandThrottled(pan, tilt) {
         const now = Date.now();
@@ -279,23 +410,11 @@ document.addEventListener('DOMContentLoaded', function() {
         fetch(`/joystick?pan=0&tilt=0`).then(r=>r.json()).catch(()=>{});
     }
 
-    function getEventPos(e) {
-        const rect = canvas.getBoundingClientRect();
-        let x, y;
-        if (e.touches) {
-            x = e.touches[0].clientX - rect.left;
-            y = e.touches[0].clientY - rect.top;
-        } else {
-            x = e.clientX - rect.left;
-            y = e.clientY - rect.top;
-        }
-        return { x: Math.max(0, Math.min(200, x)), y: Math.max(0, Math.min(200, y)) };
-    }
 
     function handleMove(e) {
         if (!dragging) return;
         const pos = getEventPos(e);
-        drawJoystick(pos);
+        //drawJoystick(pos);
         // Calculate offset from center, normalize to -100..100
         const dx = pos.x - 100;
         const dy = pos.y - 100;
@@ -305,46 +424,81 @@ document.addEventListener('DOMContentLoaded', function() {
         sendJoystickCommandThrottled(pan, tilt);
     }
 
-    canvas.addEventListener('mousedown', function(e) {
-        dragging = true;
-        handleMove(e);
-    });
-    canvas.addEventListener('mousemove', handleMove);
-    canvas.addEventListener('mouseup', function(e) {
-        dragging = false;
-        drawJoystick();
-        stopJoystick();
-    });
-    canvas.addEventListener('mouseleave', function(e) {
-        dragging = false;
-        drawJoystick();
-        // Send stopJoystick 3 times with a small delay
-        stopJoystick();
-        setTimeout(stopJoystick, 50);
-        setTimeout(stopJoystick, 100);
-    });
-    // Touch support
-    canvas.addEventListener('touchstart', function(e) {
-        dragging = true;
-        handleMove(e);
-        e.preventDefault();
-    });
-    canvas.addEventListener('touchmove', function(e) {
-        handleMove(e);
-        e.preventDefault();
-    });
-    canvas.addEventListener('touchend', function(e) {
-        dragging = false;
-        drawJoystick();
-        stopJoystick();
-        e.preventDefault();
-    });
-    canvas.addEventListener('touchcancel', function(e) {
-        dragging = false;
-        drawJoystick();
-        stopJoystick();
-        e.preventDefault();
-    });
+    //Create some Aesthetic led around the joystick
+    // const dots = [];
+    const DOT_COUNT = 28;
+    // const DOT_RADIUS = joystick.offsetWidth / 2 + joystick.offsetWidth / 10; // 10px outside joystick edge
+    const indicatorRing = document.getElementById('joystick-indicator-ring');
+    function drawIndicatorDots() {
+
+        // Remove old dots
+        indicatorRing.innerHTML = '';
+        dots.length = 0;
+
+        // Get indicator ring size and center
+        const DOT_RADIUS = joystick.offsetWidth / 2 + joystick.offsetWidth / 5;
+        const ringWidth = indicatorRing.offsetWidth;
+        const ringHeight = indicatorRing.offsetHeight;
+        const centerX = ringWidth / 2;
+        const centerY = ringHeight / 2;
+
+        // Create the dots and position them in a ring
+        for (let i = 0; i < DOT_COUNT; i++) {
+            const dot = document.createElement('div');
+            dot.className = 'joystick-indicator-dot';
+            const angle = (2 * Math.PI * i) / DOT_COUNT;
+            const x = centerX + DOT_RADIUS * Math.cos(angle);
+            const y = centerY + DOT_RADIUS * Math.sin(angle);
+            dot.style.left = `${x - 1.5}px`;
+            dot.style.top = `${y - 1.5}px`;
+            indicatorRing.appendChild(dot);
+            dots.push(dot);
+        }
+    }
+
+    drawIndicatorDots();
+    window.addEventListener('resize', drawIndicatorDots);
+
+    // canvas.addEventListener('mousedown', function(e) {
+    //     dragging = true;
+    //     handleMove(e);
+    // });
+    // canvas.addEventListener('mousemove', handleMove);
+    // canvas.addEventListener('mouseup', function(e) {
+    //     dragging = false;
+    //     drawJoystick();
+    //     stopJoystick();
+    // });
+    // canvas.addEventListener('mouseleave', function(e) {
+    //     dragging = false;
+    //     drawJoystick();
+    //     // Send stopJoystick 3 times with a small delay
+    //     stopJoystick();
+    //     setTimeout(stopJoystick, 50);
+    //     setTimeout(stopJoystick, 100);
+    // });
+    // // Touch support
+    // canvas.addEventListener('touchstart', function(e) {
+    //     dragging = true;
+    //     handleMove(e);
+    //     e.preventDefault();
+    // });
+    // canvas.addEventListener('touchmove', function(e) {
+    //     handleMove(e);
+    //     e.preventDefault();
+    // });
+    // canvas.addEventListener('touchend', function(e) {
+    //     dragging = false;
+    //     drawJoystick();
+    //     stopJoystick();
+    //     e.preventDefault();
+    // });
+    // canvas.addEventListener('touchcancel', function(e) {
+    //     dragging = false;
+    //     drawJoystick();
+    //     stopJoystick();
+    //     e.preventDefault();
+    // });
     document.getElementById('reset-btn').addEventListener('click', function() {
         stopAllPolling();
         showResetModal();
@@ -416,6 +570,48 @@ document.addEventListener('DOMContentLoaded', function() {
             hostnameInput.style.display = 'none';
         });
     }
+
+    document.querySelectorAll('.segmented-control input[type="radio"]').forEach(input => {
+        input.addEventListener('click', function() {
+            document.querySelectorAll('.selected').forEach(i => i.classList.remove('selected'));
+            sendCameraCommand(this.value);
+        });
+        input.addEventListener('touchstart', function() {
+            document.querySelectorAll('.selected').forEach(i => i.classList.remove('selected'));
+            sendCameraCommand(this.value);
+        });
+    });
+    document.querySelectorAll('.pans-control input[type="radio"]').forEach(input => {
+        input.addEventListener('click', function() {
+            document.querySelectorAll('.selected').forEach(i => i.classList.remove('selected'));
+            sendCameraCommand(this.value);
+        });
+        input.addEventListener('touchstart', function() {
+            document.querySelectorAll('.selected').forEach(i => i.classList.remove('selected'));
+            sendCameraCommand(this.value);
+        });
+    });
+    document.querySelectorAll('.icon-wrapper').forEach(icon => {
+        icon.addEventListener('click', function() {
+            // Prefer data-value, fallback to value attribute
+            document.querySelectorAll('.selected').forEach(i => i.classList.remove('selected'));
+            document.querySelectorAll('input[type="radio"]:checked').forEach(input => {
+                input.checked = false;
+            });
+            this.firstElementChild.classList.add('selected');
+            const cmd = this.getAttribute('data-value') || this.getAttribute('value');
+            if (cmd) sendCameraCommand(cmd);
+        });
+        icon.addEventListener('touchstart', function() {
+            document.querySelectorAll('.icon-wrapper').forEach(i => i.classList.remove('selected'));
+            document.querySelectorAll('input[type="radio"]:checked').forEach(input => {
+                input.checked = false;
+            });
+            this.classList.add('selected');
+            const cmd = this.getAttribute('data-value') || this.getAttribute('value');
+            if (cmd) sendCameraCommand(cmd);
+        });
+    });
 });
 function convertToKelvin(index) {
     const minKelvin = 2000;

@@ -33,18 +33,11 @@ bool camera_initialized = false;
 #define rollDirPin 7
 #define rollSTEPPin 6 //please note due to hardware bug of the rp2040 on slice 1 channel 1
 
-/*Create PWM objects for stepper motors*/
-/*
-mbed::PwmOut panSTEP(digitalPinToPinName(panStepPin));
-mbed::PwmOut tiltSTEP(digitalPinToPinName(tiltStepPin));
-mbed::PwmOut rollSTEP(digitalPinToPinName(rollSTEPPin));
-*/
 
-
-// const char* ssid = "MOTHAK IOT";
-// const char* password = "6Y6ADQM434H";
-const char* ssid = "Brownsville";
-const char* password = "ilyz6338";
+const char* ssid = "MOTHAK IOT";
+const char* password = "6Y6ADQM434H";
+// const char* ssid = "Brownsville";
+// const char* password = "ilyz6338";
 
 FileSystemStorageClass FSStorage;
 WiFiServer server(80);
@@ -55,6 +48,8 @@ const uint16_t MDNS_PORT = 5353;
 String mdns_hostname;
 
 WiFiUDP claimUDP;
+
+
 const uint16_t CLAIM_PORT = 5354;
 
 
@@ -287,20 +282,6 @@ void runrollStepper(float speed, bool direction) {
     digitalWrite(rollEnablePin, LOW); // Enable roll stepper
   }
 }
-
-
-/*void oldhandleRoot(WiFiClient client) {
-  client.println("HTTP/1.1 200 OK");
-  client.println("Content-type:text/html");
-  client.println();
-  client.print(index_html_part1);
-  client.print(index_html_part2);
-  client.print(index_html_part3);
-  client.print(index_html_part4);
-  client.print(index_html_part5);
-  client.print(index_html_part6);
-  client.print(index_html_part7);
-}*/
 
 void handleRoot(WiFiClient client) {
     client.println("HTTP/1.1 200 OK");
@@ -914,8 +895,6 @@ void setup() {
   Serial.println(WiFi.localIP());
   Serial.print("Hostname: ");
   Serial.println(mdns_hostname);
-
-  //ArduinoOTA.begin(WiFi.localIP(), "Arduino", "password", FSStorage);
   
   // Start the server
   server.begin();
@@ -924,7 +903,6 @@ void setup() {
 
 void loop() {
     reconnectWiFi(); // Check and reconnect to WiFi if disconnected
-    //ArduinoOTA.poll();
     pollMDNS(); // Poll for mDNS queries
     WiFiClient client = server.available();
     if (client) {
@@ -994,7 +972,7 @@ void loop() {
                 else if (request.indexOf("GET /style.css") >= 0) {
                   handleCSS(client);
                 }
-                else if (request.indexOf("GET /app.js") >= 0) {
+                else if (request.indexOf("GET /index.js") >= 0) {
                   handleJS(client);
                 }
                 else if (request.indexOf("POST /reset") >= 0) {

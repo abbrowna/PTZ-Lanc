@@ -1,9 +1,12 @@
 body {
-    font-family: Arial, sans-serif;
+    /* font-family: Arial, sans-serif; */
     margin: 0;
     padding: 0;
     background-color: #f0f8ff;
+    font-family: "Poppins", sans-serif;
+    font-size: 10px;
 }
+
 .modal {
     display: flex;
     justify-content: center;
@@ -13,11 +16,13 @@ body {
     left: 0;
     width: 100%;
     height: 100%;
+    /* background-color: var(--greyLight-1); */
     background-color: rgba(0, 0, 0, 0.5);
     z-index: 1000;
 }
 .modal-content {
-    background-color: white;
+    /* background-color: white; */
+    background-color: var(--greyLight-1);
     padding: 20px;
     border-radius: 10px;
     text-align: center;
@@ -58,28 +63,6 @@ body {
 .status {
     margin-top: 20px;
 }
-.dropdown-container {
-    margin-bottom: 20px;
-}
-.dropdown-container label {
-    display: block;
-    margin-bottom: 5px;
-    font-weight: bold;
-}
-.dropdown-container select {
-    width: 200px;
-    padding: 10px;
-    border: 1px solid #00bfff;
-    border-radius: 5px;
-    background-color: #f0f8ff;
-    font-size: 16px;
-    color: #333;
-    cursor: pointer;
-}
-.dropdown-container select:focus {
-    outline: none;
-    border-color: #009acd;
-}
 .spinner {
     border: 8px solid #f3f3f3;
     border-top: 8px solid #00bfff;
@@ -114,30 +97,61 @@ body {
 .roll-controls {
     display: flex;
     justify-content: center;
-    gap: 60px;
-    margin: 30px 0 10px 0;
+    align-items: center;
+    gap: 0px;      /* Reduce gap */
+    width: 30vw;
+    height: 12vw;
+    box-shadow: 0.3rem 0.3rem 0.6rem var(--greyLight-2), -0.2rem -0.2rem 0.5rem var(--white);
+    border-radius: 1rem;
+    
+
 }
+
 .roll-btn {
-    background: #00bfff;
-    border: none;
-    border-radius: 50%;
-    width: 64px;
-    height: 64px;
+    /* background: #00bfff; */
+    /* border: none; */
+    /* border-radius: 50%; */
+    width: 5vw;
+    height: 10vw;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 2px 8px #0001;
+    /* box-shadow: 0 2px 8px #0001; */
     cursor: pointer;
-    transition: background 0.2s;
-    outline: none;
+    /* transition: background 0.2s; */
+    /* outline: none; */
+    border-width: 0px;
+    color: var(--greyDark);
+    transition: color 0.3s ease, box-shadow 0.3s ease;
+    border-radius: 30%;
+    background: none
+    /* box-shadow: 0.3rem 0.3rem 0.6rem var(--greyLight-3), -0.2rem -0.2rem 0.5rem var(--white); */
+    /* margin: 30px 0 10px 0; */
 }
+.roll-btn:hover{
+  color: var(--primary);
+}
+.roll-btn-icon{
+  width: 100%;
+  height: 100%;
+}
+
+#roll-icon-container{
+    width: 100px;
+    /* height: 100%; */
+    gap: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+/*
 .roll-btn:active,
 .roll-btn:focus {
     background: #009acd;
 }
 .roll-btn svg {
     display: block;
-}
+} */
 #camera-heading
 {
     display:inline-block;
@@ -148,3 +162,578 @@ body {
     margin-left:10px;
     width:180px;
 }
+
+/* ---------Beginning of top left selector styling---------- */
+:root {
+  --primary-light: #3b424b;
+  --primary: #6d5dfc;
+  --primary-dark: #5b0eeb;
+  --white: #FFFFFF;
+  --greyLight-1: #E4EBF5;
+  --greyLight-2: #b6bed4;
+  --greyLight-3: #bec8e4;
+  --greyDark: #626d87;
+}
+
+.top-left {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 40%;
+  padding-left: 5px;
+}
+
+.segmented-control {
+  width: 100%;
+  height: 2.5rem;
+  box-shadow: 0.3rem 0.3rem 0.6rem var(--greyLight-2), -0.2rem -0.2rem 0.5rem var(--white);
+  border-radius: 1rem;
+  display: flex;
+  align-items: center;
+  position: relative;
+  font-size: 10px;
+}
+.segmented-control input {
+  display: none;
+}
+.segmented-control > input:checked + label {
+  transition: all 0.5s ease;
+  color: var(--primary);
+}
+.segmented-control__1, .segmented-control__2, .segmented-control__3, .segmented-control__4, .segmented-control__5, .segmented-control__6 {
+  width: 16.6%;
+  height: 3.6rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  color: var(--greyDark);
+  transition: all 0.5s ease;
+}
+.segmented-control__1:hover, .segmented-control__2:hover, .segmented-control__3:hover, .segmented-control__4:hover, .segmented-control__5:hover, .segmented-control__6:hover {
+  color: var(--primary);
+}
+.segmented-control__color {
+  position: absolute;
+  height: 77%;
+  width: 16.6%; 
+  border-radius: 0.8rem;
+  box-shadow: inset 0.2rem 0.2rem 0.5rem var(--greyLight-2), inset -0.2rem -0.2rem 0.5rem var(--white);
+  pointer-events: none;
+}
+#zoom1:checked ~ .segmented-control__color {
+  transform: translateX(0%);
+  transition: transform 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+#zoom2:checked ~ .segmented-control__color {
+  transform: translateX(100%);
+  transition: transform 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+#zoom3:checked ~ .segmented-control__color {
+  transform: translateX(200%);
+  transition: transform 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+#zoom4:checked ~ .segmented-control__color {
+  transform: translateX(300%);
+  transition: transform 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+#zoom5:checked ~ .segmented-control__color {
+  transform: translateX(400%);
+  transition: transform 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+#zoom6:checked ~ .segmented-control__color {
+  transform: translateX(500%);
+  transition: transform 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+
+@media screen and (max-width: 1000px) {
+  .top-left {
+    position: absolute;
+    top: 0.5rem;
+    left: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.01rem;
+    width: 40%;
+    padding-left: 5px;
+  }
+}
+
+  /*  PAN/Tilt Buttons*/
+  .pans-control {
+    width: 100%;
+    height: 2.5rem;
+    box-shadow: 0.3rem 0.3rem 0.6rem var(--greyLight-2), -0.2rem -0.2rem 0.5rem var(--white);
+    border-radius: 1rem;
+    display: flex;
+    align-items: center;
+    position: relative;
+  }
+  .pans-control input {
+    display: none;
+  }
+  .pans-control > input:checked + label {
+    transition: all 0.5s ease;
+    color: var(--primary);
+  }
+  .pans-control__1, .pans-control__2, .pans-control__3 {
+    width: 100%;
+    height: 90%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    color: var(--greyDark);
+    transition: all 0.5s ease;
+  }
+  .pans-control__1:hover, .pans__2:hover, .pans_3:hover {
+    color: var(--primary);
+  }
+.pans-control__color {
+  position: absolute;
+  height: 2rem;
+  width: 33%;
+  margin-left: 0.3rem;
+  border-radius: 0.8rem;
+  box-shadow: inset 0.2rem 0.2rem 0.5rem var(--greyLight-2), inset -0.2rem -0.2rem 0.5rem var(--white);
+  pointer-events: none;
+}
+
+#pans1:checked ~ .pans-control__color {
+  transform: translateX(0%);
+  transition: transform 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+
+#pans2:checked ~ .pans-control__color {
+  transform: translateX(100%);
+  transition: transform 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+
+#pans3:checked ~ .pans-control__color {
+  transform: translateX(200%);
+  transition: transform 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+
+/*  ICONS  */
+.icon {
+  grid-column: 3/4;
+  grid-row: 4/5;
+  display: flex;
+  justify-content: space-between;
+}
+.icon__focus, .icon__apperture, .icon__shutter, .icon__gain, .icon__whitebalance, .icon__stop, .icon__reset, .icon__init {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  box-shadow: 0.3rem 0.3rem 0.6rem var(--greyLight-2), -0.2rem -0.2rem 0.5rem var(--white);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 2rem;
+  cursor: pointer;
+  color: var(--greyDark);
+  transition: all 0.5s ease;
+}
+
+.shutter-icon, .apperture-icon , .focus-icon, .balance-icon, .gain-icon, .up-icon, .right-icon, .left-icon, .down-icon, .stop-icon, .reset-icon, .init-icon {
+  width: 2rem;    
+  height: 2rem;
+}
+
+.icon__focus:hover, .icon__apperture:hover, .icon__shutter:hover, .icon__gain:hover , .icon__whitebalance:hover, .icon__stop:hover, .icon__reset:hover, .icon__init:hover {
+  color: var(--primary);
+}
+.icon__focus.selected, 
+.icon__apperture.selected, 
+.icon__shutter.selected, 
+.icon__gain.selected, 
+.icon__whitebalance.selected {
+  box-shadow: inset 0.2rem 0.2rem 0.5rem var(--greyLight-2), inset -0.2rem -0.2rem 0.5rem var(--white);
+  color: var(--primary);
+}
+
+.icon-label {
+  margin: 0;
+  font-size: 10px;
+  color: var(--greyDark);
+  text-align: center;
+  user-select: none;   
+  padding-top: 15px;   /* optional: prevent text selection */
+  max-width: 50px;
+}
+
+.icon-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 50px;
+}
+.icon-label {
+  text-align: center;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.bottom-left {
+  display: flex;
+  position: absolute;
+  bottom: 0.5rem;
+  left: 0.5rem;
+  flex-direction: column;
+  gap: 0.01rem;
+  padding-left: 5px;
+  /* grid-template-columns: repeat(3, 4rem); */
+  /* grid-template-rows: repeat(3, 4rem); */
+  /* gap: 1rem; */
+  /* justify-content: center; */
+  /* align-items: center; */
+  /* width: max-content; */
+  /* margin: 1rem; */
+}
+
+.dpad {
+
+  /* position: absolute; */
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  /* background: var(--greyLight-2); */
+  box-shadow: 0.3rem 0.3rem 0.6rem var(--greyLight-3), -0.2rem -0.2rem 0.5rem var(--white);
+  margin: 2rem;
+  padding: 7px;
+  /* display: flex; */
+  /* justify-content: center; */
+  /* align-items: center; */
+
+
+  display: grid;
+  grid-template-columns: repeat(3, 40px);
+  grid-template-rows: repeat(3, 40px);
+  gap: 30px;
+  justify-content: center;
+  align-items: center;
+}
+
+.arrow {
+  /* position: absolute; */
+  width: 2.5rem;
+  height: 2.5rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  color: var(--greyDark);
+  transition: color 0.3s ease, box-shadow 0.3s ease;
+  border-radius: 50%;
+  background: var(--greyLight-2);
+  box-shadow: 0.3rem 0.3rem 0.6rem var(--greyLight-3), -0.2rem -0.2rem 0.5rem var(--white);
+}
+
+.arrow ion-icon {
+  font-size: 1.8rem;
+  pointer-events: none; /* so clicks register on .arrow div */
+}
+
+.arrow:hover {
+  color: var(--primary);
+  box-shadow: inset 0.2rem 0.2rem 0.5rem var(--greyLight-2), inset -0.2rem -0.2rem 0.5rem var(--white);
+}
+
+.bottom-right {
+  display: flex;
+  position: absolute;
+  bottom: 4rem;
+  right: 4rem;
+  flex-direction: column;
+  gap: 0.01rem;
+  padding-right: 5px;
+  /* grid-template-columns: repeat(3, 4rem); */
+  /* grid-template-rows: repeat(3, 4rem); */
+  /* gap: 1rem; */
+  justify-content: center;
+  align-items: center;
+  width: max-content;
+  /* margin: 1rem; */
+}
+
+/* Joystick */
+.joystick {
+  /* margin-right: 3rem; */
+  /* margin-bottom: 3rem; */
+  background: radial-gradient(at 75% 75%, #f2f2f2 0%, #d9d9d9 100%);
+  box-shadow:
+    0 -5px 5px rgba(255, 255, 255, 0.1),
+    0 5px 5px rgba(255, 255, 255, 0.05),
+    inset 0 5px 5px rgba(0, 0, 0, 0.02),
+    inset 0 -5px 5px rgba(255, 255, 255, 0.05);
+
+  width: 25vw;              /* responsive width based on viewport */
+  height: 25vw;             /* keep it square */
+  max-width: 17vw;         /* don't get too big */
+  max-height: 17vw;
+  min-width: 60px;         /* don't get too small */
+  min-height: 60px;
+
+  border-radius: 50%;
+
+  position: relative;       /* necessary if you have absolutely positioned children */
+}
+#joystick__ball {
+  background: radial-gradient(at 25% 25%, #dcdada 0%, #d9d9d9 100%);
+  position: relative;
+  height: 70%;
+  width: 70%;
+  border-radius: 50%;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  transform-style: preserve-3d;
+  perspective: 1000px;
+  box-shadow: inset -5px -10px 40px rgba(0, 0, 0, 0.05), inset 0px 0px 10px rgba(0, 0, 0, 0.3), inset 0px 0px 5px rgba(0, 0, 0, 0.5), inset 0px 0px 3px 1px rgba(0, 0, 0, 0.51), 0px 0px 10px rgba(0, 0, 0, 0.3);
+}
+#joystick__zero {
+  position: absolute;
+  z-index: 4;
+  height: 30%;
+  width: 30%;
+  border-radius: 50%;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+#joystick__stick {
+  background: radial-gradient(at 50% 75%, #f2f2f2 0%, #d9d9d9 100%);
+  box-shadow: inset 5px 5px 10px rgba(255, 255, 255, 0.3), inset -5px -5px 10px rgba(0, 0, 0, 0.15), 0 2px 10px -5px rgba(0, 0, 0, 0.7), 0 4px 20px -10px rgba(0, 0, 0, 0.2), -50px 0 40px -20px rgba(0, 0, 0, 0.2), 50px 50px 40px -20px rgba(0, 0, 0, 0.2);
+  position: absolute;
+  z-index: 2;
+  height: 50%;
+  width: 50%;
+  border-radius: 50%;
+  top: 50%;
+  left: 50%;
+  margin: -25% -25%;
+  transition: 200ms ease all;
+}
+#joystick__stick:before {
+  content: "";
+  background: #fff;
+  position: absolute;
+  top: 10px;
+  left: 49px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  box-shadow: 0 2px 3px #000, 39px 40px #fff, 39px 42px 3px #000, 0px 80px #fff, 0px 82px 3px #000, -39px 40px #fff, -39px 42px 3px #000;
+  opacity: 0.15;
+}
+#joystick__stick:after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 50%;
+  height: 50%;
+  margin: -25% -25%;
+  border-radius: 50%;
+  box-shadow: -5px -5px 20px -10px;
+  filter: blur(5px);
+  opacity: 0.4;
+}
+.joystick-indicator-ring {
+    position: absolute;
+    /* top: 50%; */
+    /* left: 50%; */
+    width: 250px; /* slightly larger than joystick */
+    height: 250px;
+    /* transform: translate(-50%, -50%); */
+    pointer-events: none;
+    z-index: 1;
+}
+.joystick-indicator-dot {
+    position: absolute;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.7); /* default color */
+    transition: background 0.15s;
+}
+.joystick-indicator-dot.active {
+    background: rgb(17, 255, 238);
+}
+
+.top-right {
+  display: flex;
+  position: absolute;
+  top: 1.5rem;
+  right: 0.5rem;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 5px;
+  justify-content: center;
+  align-items: center;
+  width: max-content;
+}
+
+.center-circle {
+  position: absolute;
+  /* width: 2.5rem; */
+  /* height: 2.5rem; */
+  /* background: var(--greyLight-2); */
+  /* border-radius: 50%; */
+  /* box-shadow: 0.3rem 0.3rem 0.6rem var(--greyLight-3), -0.2rem -0.2rem 0.5rem var(--white); */
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+.power-icons{
+  display: flex;
+  flex-direction:row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/*-------loader styling and animation ------------*/
+/*  INITIALIZE BUTTON  */
+.circles {
+  transform: scale(0.8);
+  grid-column: 2/3;
+  grid-row: 4/6;
+  width: 9rem;
+  height: 9rem;
+  justify-self: center;
+  border-radius: 1rem;
+  display: grid;
+  grid-template-rows: 1fr;
+  justify-items: center;
+  align-items: center;
+}
+.circle__btn {
+  grid-row: 1/2;
+  grid-column: 1/2;
+  width: 6rem;
+  height: 6rem;
+  display: flex;
+  margin: 0.6rem;
+  justify-content: center;
+  align-items: center;
+  border-radius: 50%;
+  font-size: 3.2rem;
+  color: var(--primary);
+  z-index: 300;
+  background: var(--greyLight-1);
+  box-shadow: 0.3rem 0.3rem 0.6rem var(--greyLight-2), -0.2rem -0.2rem 0.5rem var(--white);
+  cursor: pointer;
+  position: relative;
+}
+.circle__btn.shadow {
+  box-shadow: inset 0.2rem 0.2rem 0.5rem var(--greyLight-2), inset -0.2rem -0.2rem 0.5rem var(--white);
+}
+.circle__btn .play {
+  position: absolute;
+  opacity: 0;
+  transition: all 0.2s linear;
+}
+.circle__btn .play.visibility {
+  opacity: 1;
+}
+.circle__btn .pause {
+  position: absolute;
+  transition: all 0.2s linear;
+}
+.circle__btn .pause.visibility {
+  opacity: 0;
+}
+.circle__back-1, .circle__back-2 {
+  /* grid-row: 1/2; */
+  /* grid-column: 1/2; */
+  width: 6rem;
+  height: 6rem;
+  border-radius: 50%;
+  filter: blur(1px);
+  z-index: 100;
+  position: absolute;
+  /* top: 50%; */
+  /* left: 50%; */
+  /* transform: translate(-50%, -50%); */
+}
+.circle__back-1 {
+  box-shadow: 0.4rem 0.4rem 0.8rem var(--greyLight-2), -0.4rem -0.4rem 0.8rem var(--white);
+  background: linear-gradient(to bottom right, var(--greyLight-2) 0%, var(--white) 100%);
+  -webkit-animation: waves 4s linear infinite;
+          animation: waves 4s linear infinite;
+}
+/* .circle__back-1.paused {
+  -webkit-animation-play-state: paused;
+          animation-play-state: paused !important;
+} */
+.circle__back-2 {
+  box-shadow: 0.4rem 0.4rem 0.8rem var(--greyLight-2), -0.4rem -0.4rem 0.8rem var(--white);
+  -webkit-animation: waves 4s linear 2s infinite;
+          animation: waves 4s linear 2s infinite;
+}
+/* .circle__back-2.paused {
+  -webkit-animation-play-state: paused;
+          animation-play-state: paused !important;
+} */
+
+.pause, .play{
+width: 3rem;    
+height: 3rem;
+}
+
+.bottom-center {
+  position: absolute;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+
+}
+
+/* Keyframes for waves animation */
+@-webkit-keyframes waves {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+@keyframes waves {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+/* @keyframes waves {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.15);
+    opacity: 0.5;
+  }
+} */

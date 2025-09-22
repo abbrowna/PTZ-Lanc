@@ -570,7 +570,7 @@ document.addEventListener('DOMContentLoaded', function() {
             hostnameInput.style.display = 'none';
         });
     }
-
+    // Camera command buttons
     document.querySelectorAll('.segmented-control input[type="radio"]').forEach(input => {
         input.addEventListener('click', function() {
             document.querySelectorAll('.selected').forEach(i => i.classList.remove('selected'));
@@ -595,22 +595,93 @@ document.addEventListener('DOMContentLoaded', function() {
         icon.addEventListener('click', function() {
             // Prefer data-value, fallback to value attribute
             document.querySelectorAll('.selected').forEach(i => i.classList.remove('selected'));
-            document.querySelectorAll('input[type="radio"]:checked').forEach(input => {
-                input.checked = false;
-            });
+            document.querySelectorAll('input[type="radio"]:checked').forEach(input => { input.checked = false; });
             this.firstElementChild.classList.add('selected');
+            this.setAttribute('aria-selected', 'true');
             const cmd = this.getAttribute('data-value') || this.getAttribute('value');
             if (cmd) sendCameraCommand(cmd);
         });
         icon.addEventListener('touchstart', function() {
-            document.querySelectorAll('.icon-wrapper').forEach(i => i.classList.remove('selected'));
-            document.querySelectorAll('input[type="radio"]:checked').forEach(input => {
-                input.checked = false;
-            });
-            this.classList.add('selected');
+            // Clear icon selected states and radios (mirror click behavior)
+            document.querySelectorAll('.selected').forEach(i => i.classList.remove('selected'));
+            document.querySelectorAll('input[type="radio"]:checked').forEach(input => { input.checked = false; });
+            this.firstElementChild.classList.add('selected');
+            this.setAttribute('aria-selected', 'true');
             const cmd = this.getAttribute('data-value') || this.getAttribute('value');
             if (cmd) sendCameraCommand(cmd);
         });
+    });
+    // ===== Hotkey helpers + handler =====
+
+    // Ignore when typing in inputs/textareas/contenteditable
+    function isTypingTarget(t) {
+    if (!t) return false;
+    const tag = (t.tagName || '').toLowerCase();
+    return tag === 'input' || tag === 'textarea' || t.isContentEditable;
+    }
+
+    // Select a camera command:
+    // 1) Clear .selected on all icons
+    // 2) Uncheck all radios so only one command appears active globally
+    // 3) Prefer matching radio (set checked=true + change event)
+    // 4) Else select matching icon wrapper
+    // 5) Send the command
+    function selectCommand(value) {
+    // Clear icon selections
+    document.querySelectorAll('.selected').forEach(el => el.classList.remove('selected'));
+    document.querySelectorAll('.icon-wrapper[aria-selected="true"]').forEach(el => el.removeAttribute('aria-selected'));
+    // Uncheck all radios (zoom and pans)
+    document.querySelectorAll('input[type="radio"]:checked').forEach(r => (r.checked = false));
+
+    // Prefer radios in the two groups
+    const radio = document.querySelector(
+        `.segmented-control input[type="radio"][value="${value}"], .pans-control input[type="radio"][value="${value}"]`
+    );
+    if (radio) {
+        radio.checked = true;
+        radio.dispatchEvent(new Event('change', { bubbles: true }));
+    } else {
+        // Fallback: icon wrappers (focus/aperture/shutter/gain/WB)
+        const wrapper = document.querySelector(`.icon-wrapper[data-value="${value}"], .icon-wrapper[value="${value}"]`);
+        if (wrapper) {
+        (wrapper.firstElementChild || wrapper).classList.add('selected');
+        wrapper.setAttribute('aria-selected', 'true');
+        }
+    }
+
+    // Send once (don’t also click, to avoid double-send)
+    sendCameraCommand(String(value));
+    }
+
+    // Camera command Hotkeys
+    document.addEventListener('keydown', (event) => {
+    if (event.repeat) return;
+    if (isTypingTarget(event.target)) return;
+
+    const k = (event.key || '').toLowerCase();
+    let value = null;
+
+    // 1–6 -> Zoom 1–6
+    if (k >= '1' && k <= '6') value = parseInt(k, 10);
+    // p, [, ], . -> Pan/Tilt slow(15), med(14), fast(13)
+    else if (k === 'p') value = 15;
+    else if (k === '[') value = 14;
+    else if (k === ']' || k === '.') value = 13;
+    // F -> Focus (8)
+    else if (k === 'f') value = 8;
+    // A -> Aperture (10)
+    else if (k === 'a') value = 10;
+    // S -> Shutter (11)
+    else if (k === 's') value = 11;
+    // G or E -> Gain (12)
+    else if (k === 'g' || k === 'e') value = 12;
+    // W -> White balance (9)
+    else if (k === 'w') value = 9;
+
+    if (value !== null) {
+        event.preventDefault();
+        selectCommand(value);
+    }
     });
 });
 function convertToKelvin(index) {

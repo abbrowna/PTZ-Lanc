@@ -31,7 +31,7 @@ bool camera_initialized = false;
 #define tiltStepPin 3
 #define rollEnablePin 8
 #define rollDirPin 7
-#define rollSTEPPin 6 //please note due to hardware bug of the rp2040 on slice 1 channel 1
+#define rollSTEPPin 6 //using pin 6 because due to hardware bug of the rp2040 on slice 1 channel 1 which maps to pin 7
 
 
 const char* ssid = "MOTHAK IOT";
@@ -56,7 +56,7 @@ const uint16_t CLAIM_PORT = 5354;
 int bitDuration = 104; // Duration of one LANC bit in microseconds
 
 
-unsigned long motor_timeout = 5000; //milliseconds before the motor times out and is disabled
+unsigned long motor_timeout = 300000; //milliseconds before the motor times out and is disabled
 bool timeout_flag = 0;
 
 int wb_k = 34; //5400
@@ -84,6 +84,7 @@ float tiltLastSpeed = 0.0;
 bool joystickActive = false;
 bool keyboardTiltActive = false;
 bool keyboardPanActive = false;
+bool rollingActive = false;
 
 //----speed calculation for sterpper motor----
 // Gear ratios
@@ -91,13 +92,13 @@ bool keyboardPanActive = false;
 #define PAN_GEAR_OUTPUT 144.0
 #define TILT_GEAR_MOTOR 21.0
 #define TILT_GEAR_OUTPUT 64.0
-#define ROLL_GEAR_MOTOR 40.0
+#define ROLL_GEAR_MOTOR 16.0
 #define ROLL_GEAR_OUTPUT 344.0
 
 //default speeds per axis defined in degrees per second of the axis. 
 #define PAN_DEFAULT_SPEED 5.0 // degrees/sec
 #define TILT_DEFAULT_SPEED 5.0 // degrees/sec
-#define ROLL_DEFAULT_SPEED 0.2 // degrees/sec
+#define ROLL_DEFAULT_SPEED 2.0 // degrees/sec
 
 // Stepper and microstepping
 #define STEPPER_DEG_PER_STEP 1.8
@@ -564,6 +565,7 @@ void handleStopAll(WiFiClient client) {
   tiltStepperActive = false;
   rollStepperActive = false;
   joystickActive = false;
+  rollingActive = false;
   keyboardTiltActive = false;
   keyboardPanActive = false;
   Serial.println("All motors stopped and state reset.");
@@ -629,16 +631,18 @@ void handleOTAUpload(WiFiClient& client, long contentLength) {
 void handleRoll(WiFiClient client, String request) {
     if (request.indexOf("GET /roll/ccw/on") >= 0) {
         runrollStepper(ROLL_DEFAULT_SPEED, false); // CCW
-        rollStepperActive = true;
+        rollingActive = true;
     } else if (request.indexOf("GET /roll/ccw/off") >= 0) {
         pwm_set_chan_level(ROLL_SLICE, ROLL_CHAN, 0);
         rollStepperActive = false;
+        rollingActive = false;
     } else if (request.indexOf("GET /roll/cw/on") >= 0) {
         runrollStepper(ROLL_DEFAULT_SPEED, true); // CW
-        rollStepperActive = true;
+        rollingActive = true;
     } else if (request.indexOf("GET /roll/cw/off") >= 0) {
         pwm_set_chan_level(ROLL_SLICE, ROLL_CHAN, 0);
         rollStepperActive = false;
+        rollingActive = false;
     }
 
     client.println("HTTP/1.1 200 OK");
@@ -1149,7 +1153,7 @@ void loop() {
     }
 
     /*******  OTHER STUFF TO DO IN VOID LOOP **********/
-    if(!left_arrow && !right_arrow && !up_arrow && !down_arrow && !joystickActive && !keyboardPanActive && !keyboardTiltActive && !rollStepperActive) {
+    if(!left_arrow && !right_arrow && !up_arrow && !down_arrow && !joystickActive && !keyboardPanActive && !keyboardTiltActive && !rollingActive) {
         pwm_set_chan_level(PAN_SLICE, PAN_CHAN, 0);
         pwm_set_chan_level(TILT_SLICE, TILT_CHAN, 0);
         pwm_set_chan_level(ROLL_SLICE, ROLL_CHAN, 0);

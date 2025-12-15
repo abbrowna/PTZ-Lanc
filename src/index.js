@@ -53,6 +53,57 @@ function sendKeyboardDirection(dir, state) {
     fetch(`/keyboard/${dir}/${state ? 'on' : 'off'}`).catch(()=>{});
 }
 
+// ===== Gamepad helpers and config (place near top, before DOMContentLoaded) =====
+const GPAD_CFG = {
+  deadZone: 0.15,
+  expo: 2.4,                // stronger = slower near center, faster near edge
+  axes: { leftY: 1, rightX: 2, rightY: 3 }, // typical DualShock mapping
+  zoomThresholds: [0.15, 0.30, 0.45, 0.60, 0.75, 0.90], // bins for Zoom 2..7
+  joystickThrottleMs: 50,
+  // CameraCommands values (keep in sync with main.cpp)
+  CMD: {
+    FOCUS: 8,
+    WB_K: 9,
+    EXP_F: 10,
+    EXP_S: 11,
+    EXP_GAIN: 12,
+    PAN_TILT_FAST: 13,
+    PAN_TILT_MEDIUM: 14,
+    PAN_TILT_SLOW: 15
+  },
+  buttons: {
+    0: 10, // Cross -> Aperture (EXP_F)
+    1: 11, // Circle -> Shutter  (EXP_S)
+    2: 12, // Square -> Gain     (EXP_GAIN)
+    3: 9,  // Triangle -> White Balance (WB_K)
+  },
+  dpad: { up: 12, down: 13, left: 14, right: 15 },
+  shoulder: { R1: 5, R2: 7, L1: 4, L2: 6 },
+};
+
+function applyDeadZoneExpo(x, dz = GPAD_CFG.deadZone, expo = GPAD_CFG.expo) {
+  const ax = Math.abs(x);
+  if (ax < dz) return 0;
+  const mag = (ax - dz) / (1 - dz);
+  const curved = Math.pow(mag, expo);
+  return Math.sign(x) * curved;
+}
+
+function zoomRegimeForMagnitude(magAbs) {
+  let regime = 1; // start at Zoom 1
+  for (let t of GPAD_CFG.zoomThresholds) {
+    if (magAbs >= t) regime++;
+  }
+  if (regime > 6) regime = 6;
+  return regime;
+}
+
+// Reuse your UI selection logic to keep UI synced when gamepad changes regimes
+// selectCommand(value) is already defined below in your hotkey section and available here.
+// If selectCommand isn’t available yet, you can move this config block below it.
+
+// ...existing code...
+
 let keyState = {};
 
 document.addEventListener('keydown', (event) => {
@@ -683,6 +734,159 @@ document.addEventListener('DOMContentLoaded', function() {
         selectCommand(value);
     }
     });
+
+    // ===== Gamepad support
+    let lastGpadJoystickSend = 0;
+    let lastPanTiltSent = { pan: 0, tilt: 0 };
+
+    let lastZoomActive = false;
+    let lastZoomDir = null; // 'up' | 'down' | null
+    let lastZoomRegime = 1;
+
+    function sendGamepadPanTilt(panNorm, tiltNorm) {
+        const now = Date.now();
+        if (now - lastGpadJoystickSend < GPAD_CFG.joystickThrottleMs) return;
+        if (
+        Math.abs(lastPanTiltSent.pan - panNorm) < 0.05 &&
+        Math.abs(lastPanTiltSent.tilt - tiltNorm) < 0.05
+        ) return;
+
+        lastPanTiltSent = { pan: panNorm, tilt: tiltNorm };
+        lastGpadJoystickSend = now;
+
+        fetch(`/joystick?pan=${panNorm}&tilt=${tiltNorm}`).then(r=>r.json()).catch(()=>{});
+    }
+
+    function sendCameraButton(value) {
+        // optional: reflect selection in UI; leave radios as-is for discrete controls
+        sendCameraCommand(String(value));
+    }
+
+    function focusNearStep() {
+        sendCameraCommand(String(GPAD_CFG.CMD.FOCUS));
+        fetch('/direction/up/on').then(()=>fetch('/direction/up/off')).catch(()=>{});
+    }
+    function focusFarStep() {
+        sendCameraCommand(String(GPAD_CFG.CMD.FOCUS));
+        fetch('/direction/down/on').then(()=>fetch('/direction/down/off')).catch(()=>{});
+    }
+
+    function sendDpad(dir, pressed) {
+        const state = pressed ? 'on' : 'off';
+        fetch(`/direction/${dir}/${state}`).catch(()=>{});
+    }
+
+    const prevButtons = {}; // per gamepad index
+
+    function pollGamepads() {
+        const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+        for (let i = 0; i < pads.length; i++) {
+        const gp = pads[i];
+        if (!gp) continue;
+
+        // Right stick -> pan/tilt (exponential; invert Y so forward is positive)
+        const panRaw = gp.axes[GPAD_CFG.axes.rightX] || 0;
+        const tiltRaw = gp.axes[GPAD_CFG.axes.rightY] || 0;
+        const pan = applyDeadZoneExpo(panRaw);
+        const tilt = applyDeadZoneExpo(-tiltRaw);
+        sendGamepadPanTilt(pan, tilt);
+
+        // Left stick Y -> discrete zoom regime + direction hold; reset to Zoom 1 on release
+        const zRaw = gp.axes[GPAD_CFG.axes.leftY] || 0;
+        const z = applyDeadZoneExpo(-zRaw); // invert Y: forward positive (zoom in)
+        const magAbs = Math.abs(z);
+        const Z_DEAD = 0.05; // deadzone for zoom stick
+
+        if (Math.abs(z) > Z_DEAD) {
+            const regime = zoomRegimeForMagnitude(magAbs);
+            if (regime !== lastZoomRegime) {
+            // reflect selection in UI and backend
+            selectCommand(regime);
+            lastZoomRegime = regime;
+            }
+            const dir = z > 0 ? 'up' : 'down';
+            if (!lastZoomActive || dir !== lastZoomDir) {
+            fetch(`/direction/up/${dir === 'up' ? 'on' : 'off'}`).catch(()=>{});
+            fetch(`/direction/down/${dir === 'down' ? 'on' : 'off'}`).catch(()=>{});
+            lastZoomDir = dir;
+            lastZoomActive = true;
+            }
+        } else {
+            if (lastZoomActive) {
+            // release: stop zooming and reset regime to Zoom 1
+            fetch('/direction/up/off').catch(()=>{});
+            fetch('/direction/down/off').catch(()=>{});
+            selectCommand(1);
+            lastZoomRegime = 1;
+            lastZoomDir = null;
+            lastZoomActive = false;
+            }
+        }
+
+        // Buttons
+        const prev = prevButtons[i] || {};
+        const b = gp.buttons;
+
+        // Face buttons -> camera commands
+        for (const [btnIdxStr, cmdVal] of Object.entries(GPAD_CFG.buttons)) {
+            const idx = Number(btnIdxStr);
+            const was = !!prev[idx];
+            const is = !!(b[idx] && b[idx].pressed);
+            if (is && !was) sendCameraButton(cmdVal);
+            prev[idx] = is;
+        }
+
+        // D-pad -> arrows
+        const dpadMap = GPAD_CFG.dpad;
+        const dpadDirs = [
+            { dir: 'up', idx: dpadMap.up },
+            { dir: 'down', idx: dpadMap.down },
+            { dir: 'left', idx: dpadMap.left },
+            { dir: 'right', idx: dpadMap.right },
+        ];
+        dpadDirs.forEach(({ dir, idx }) => {
+            const was = !!prev[idx];
+            const is = !!(b[idx] && b[idx].pressed);
+            if (is !== was) sendDpad(dir, is);
+            prev[idx] = is;
+        });
+
+        // Shoulders: R1 near, R2 far (press-once steps)
+        const { R1, R2 } = GPAD_CFG.shoulder;
+        const r1Was = !!prev[R1];
+        const r1Is = !!(b[R1] && b[R1].pressed);
+        if (r1Is && !r1Was) focusNearStep();
+        prev[R1] = r1Is;
+
+        const r2Was = !!prev[R2];
+        const r2Is = !!(b[R2] && b[R2].pressed);
+        if (r2Is && !r2Was) focusFarStep();
+        prev[R2] = r2Is;
+
+        prevButtons[i] = prev;
+        }
+        requestAnimationFrame(pollGamepads);
+    }
+
+    window.addEventListener('gamepadconnected', (e) => {
+        console.log('Gamepad connected:', e.gamepad.id);
+    });
+    window.addEventListener('gamepaddisconnected', (e) => {
+        console.log('Gamepad disconnected:', e.gamepad.id);
+    });
+
+    // Start polling after DOM ready
+    let pollingStarted = false;
+    function startPollingOnce() {
+    if (!pollingStarted) {
+        pollingStarted = true;
+        requestAnimationFrame(pollGamepads);
+    }
+    }
+    window.addEventListener('gamepadconnected', () => startPollingOnce());
+    document.addEventListener('click', () => startPollingOnce(), { once: true });
+
+    // ...existing code...
 });
 function convertToKelvin(index) {
     const minKelvin = 2000;

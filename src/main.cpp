@@ -36,8 +36,8 @@ bool camera_initialized = false;
 
 const char* ssid = "MOTHAK IOT";
 const char* password = "6Y6ADQM434H";
-// const char* ssid = "Brownsville";
-// const char* password = "ilyz6338";
+//const char* ssid = "Brownsville";
+//const char* password = "ilyz6338";
 
 FileSystemStorageClass FSStorage;
 WiFiServer server(80);

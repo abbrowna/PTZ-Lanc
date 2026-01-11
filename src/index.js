@@ -56,8 +56,8 @@ function sendKeyboardDirection(dir, state) {
 // ===== Gamepad helpers and config =====
 const GPAD_CFG = {
   deadZone: 0.15,
-  expo: 2.4,
-  axes: { leftY: 1, rightX: 2, rightY: 3 },
+  expo: 1.5,
+  axes: { leftY: 1, rightX: 5, rightY: 2 },
   zoomThresholds: [0.15, 0.30, 0.45, 0.60, 0.75, 0.90],
   joystickThrottleMs: 50,
   CMD: {
@@ -419,18 +419,22 @@ document.addEventListener('DOMContentLoaded', function() {
         fetch(`/joystick?pan=${panNorm}&tilt=${tiltNorm}`).then(r=>r.json()).catch(()=>{});
     }
 
-    function sendCameraButton(value) {
-        sendCameraCommand(String(value));
+    function focusNearStart() {
+        selectCommand(GPAD_CFG.CMD.FOCUS);
+        fetch('/direction/up/on').catch(()=>{});
     }
 
-    function focusNearStep() {
-        sendCameraCommand(String(GPAD_CFG.CMD.FOCUS));
-        fetch('/direction/up/on').then(()=>fetch('/direction/up/off')).catch(()=>{});
+    function focusNearStop() {
+        fetch('/direction/up/off').catch(()=>{});
     }
 
-    function focusFarStep() {
-        sendCameraCommand(String(GPAD_CFG.CMD.FOCUS));
-        fetch('/direction/down/on').then(()=>fetch('/direction/down/off')).catch(()=>{});
+    function focusFarStart() {
+        selectCommand(GPAD_CFG.CMD.FOCUS);
+        fetch('/direction/down/on').catch(()=>{});
+    }
+
+    function focusFarStop() {
+        fetch('/direction/down/off').catch(()=>{});
     }
 
     function sendDpad(dir, pressed) {
@@ -492,7 +496,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const idx = Number(btnIdxStr);
                 const was = !!prev[idx];
                 const is = !!(b[idx] && b[idx].pressed);
-                if (is && !was) sendCameraButton(cmdVal);
+                if (is && !was) selectCommand(cmdVal);
                 prev[idx] = is;
             }
 
@@ -515,12 +519,24 @@ document.addEventListener('DOMContentLoaded', function() {
             const { R1, R2 } = GPAD_CFG.shoulder;
             const r1Was = !!prev[R1];
             const r1Is = !!(b[R1] && b[R1].pressed);
-            if (r1Is && !r1Was) focusNearStep();
+            if (r1Is && !r1Was) {
+                // Button just pressed - start focusing near
+                focusNearStart();
+            } else if (!r1Is && r1Was) {
+                // Button just released - stop focusing
+                focusNearStop();
+            }
             prev[R1] = r1Is;
 
             const r2Was = !!prev[R2];
             const r2Is = !!(b[R2] && b[R2].pressed);
-            if (r2Is && !r2Was) focusFarStep();
+            if (r2Is && !r2Was) {
+                // Button just pressed - start focusing far
+                focusFarStart();
+            } else if (!r2Is && r2Was) {
+                // Button just released - stop focusing
+                focusFarStop();
+            }
             prev[R2] = r2Is;
 
             prevButtons[i] = prev;

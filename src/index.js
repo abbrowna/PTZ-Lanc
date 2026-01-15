@@ -56,8 +56,8 @@ function sendKeyboardDirection(dir, state) {
 // ===== Gamepad helpers and config =====
 const GPAD_CFG = {
   deadZone: 0.15,
-  expo: 1.5,
-  axes: { leftY: 1, rightX: 5, rightY: 2 },
+  expo: 2.5,
+  axes: { leftY: 1, rightX: 5, rightY: 2, dpad: 9 },  // Added dpad axis
   zoomThresholds: [0.15, 0.30, 0.45, 0.60, 0.75, 0.90],
   joystickThrottleMs: 50,
   CMD: {
@@ -76,7 +76,16 @@ const GPAD_CFG = {
     2: 12,
     3: 9,
   },
+  // Keep button-based dpad config as fallback
   dpad: { up: 12, down: 13, left: 14, right: 15 },
+  // Axis-based dpad ranges (value ± tolerance)
+  dpadAxis: {
+    up:    { value: -1.0,  tolerance: 0.1 },
+    right: { value: -0.43, tolerance: 0.15 },
+    down:  { value: 0.14,  tolerance: 0.15 },
+    left:  { value: 0.71,  tolerance: 0.15 },
+    neutral: 1.29  // Value when nothing pressed (or check for > 1.0)
+  },
   shoulder: { R1: 5, R2: 7, L1: 4, L2: 6 },
 };
 
@@ -404,19 +413,23 @@ document.addEventListener('DOMContentLoaded', function() {
     let lastZoomActive = false;
     let lastZoomDir = null;
     let lastZoomRegime = 1;
+    const prevButtons = {};  // Add this line - tracks previous button states per gamepad
 
     function sendGamepadPanTilt(panNorm, tiltNorm) {
         const now = Date.now();
+        
+        // Time-based throttle only (removed delta filter for responsiveness)
         if (now - lastGpadJoystickSend < GPAD_CFG.joystickThrottleMs) return;
-        if (
-            Math.abs(lastPanTiltSent.pan - panNorm) < 0.05 &&
-            Math.abs(lastPanTiltSent.tilt - tiltNorm) < 0.05
-        ) return;
+
+        // Only skip if BOTH axes are truly unchanged (exact match or both near zero)
+        const panStopped = Math.abs(panNorm) < 0.01 && Math.abs(lastPanTiltSent.pan) < 0.01;
+        const tiltStopped = Math.abs(tiltNorm) < 0.01 && Math.abs(lastPanTiltSent.tilt) < 0.01;
+        if (panStopped && tiltStopped) return;  // Don't spam zero commands
 
         lastPanTiltSent = { pan: panNorm, tilt: tiltNorm };
         lastGpadJoystickSend = now;
 
-        fetch(`/joystick?pan=${panNorm}&tilt=${tiltNorm}`).then(r=>r.json()).catch(()=>{});
+        fetch(`/joystick?pan=${panNorm.toFixed(3)}&tilt=${tiltNorm.toFixed(3)}`).then(r=>r.json()).catch(()=>{});
     }
 
     function focusNearStart() {
@@ -442,7 +455,26 @@ document.addEventListener('DOMContentLoaded', function() {
         fetch(`/direction/${dir}/${state}`).catch(()=>{});
     }
 
-    const prevButtons = {};
+    // Helper function to determine D-pad direction from axis value
+    function getDpadStateFromAxis(axisValue) {
+        const cfg = GPAD_CFG.dpadAxis;
+        
+        // Check if neutral (nothing pressed) - typically > 1.0 or NaN
+        if (isNaN(axisValue) || axisValue > 1.0) {
+            return { up: false, down: false, left: false, right: false };
+        }
+        
+        // Check each direction with tolerance
+        const isUp = Math.abs(axisValue - cfg.up.value) <= cfg.up.tolerance;
+        const isRight = Math.abs(axisValue - cfg.right.value) <= cfg.right.tolerance;
+        const isDown = Math.abs(axisValue - cfg.down.value) <= cfg.down.tolerance;
+        const isLeft = Math.abs(axisValue - cfg.left.value) <= cfg.left.tolerance;
+        
+        return { up: isUp, down: isDown, left: isLeft, right: isRight };
+    }
+
+    // Track previous D-pad axis state
+    const prevDpadAxisState = {};
 
     function pollGamepads() {
         const pads = navigator.getGamepads ? navigator.getGamepads() : [];
@@ -454,7 +486,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const panRaw = gp.axes[GPAD_CFG.axes.rightX] || 0;
             const tiltRaw = gp.axes[GPAD_CFG.axes.rightY] || 0;
             const pan = applyDeadZoneExpo(panRaw);
-            const tilt = applyDeadZoneExpo(-tiltRaw);
+            const tilt = applyDeadZoneExpo(tiltRaw);
             sendGamepadPanTilt(pan, tilt);
 
             // Left stick Y -> discrete zoom regime
@@ -500,20 +532,38 @@ document.addEventListener('DOMContentLoaded', function() {
                 prev[idx] = is;
             }
 
-            // D-pad -> arrows
-            const dpadMap = GPAD_CFG.dpad;
-            const dpadDirs = [
-                { dir: 'up', idx: dpadMap.up },
-                { dir: 'down', idx: dpadMap.down },
-                { dir: 'left', idx: dpadMap.left },
-                { dir: 'right', idx: dpadMap.right },
-            ];
-            dpadDirs.forEach(({ dir, idx }) => {
-                const was = !!prev[idx];
-                const is = !!(b[idx] && b[idx].pressed);
-                if (is !== was) sendDpad(dir, is);
-                prev[idx] = is;
-            });
+            // D-pad handling - try axis-based first, fall back to button-based
+            const dpadAxisValue = gp.axes[GPAD_CFG.axes.dpad];
+            const hasAxisDpad = dpadAxisValue !== undefined && GPAD_CFG.axes.dpad !== undefined;
+            
+            if (hasAxisDpad) {
+                // Axis-based D-pad
+                const prevDpad = prevDpadAxisState[i] || { up: false, down: false, left: false, right: false };
+                const currDpad = getDpadStateFromAxis(dpadAxisValue);
+                
+                ['up', 'down', 'left', 'right'].forEach(dir => {
+                    if (currDpad[dir] !== prevDpad[dir]) {
+                        sendDpad(dir, currDpad[dir]);
+                    }
+                });
+                
+                prevDpadAxisState[i] = currDpad;
+            } else {
+                // Button-based D-pad (fallback)
+                const dpadMap = GPAD_CFG.dpad;
+                const dpadDirs = [
+                    { dir: 'up', idx: dpadMap.up },
+                    { dir: 'down', idx: dpadMap.down },
+                    { dir: 'left', idx: dpadMap.left },
+                    { dir: 'right', idx: dpadMap.right },
+                ];
+                dpadDirs.forEach(({ dir, idx }) => {
+                    const was = !!prev[idx];
+                    const is = !!(b[idx] && b[idx].pressed);
+                    if (is !== was) sendDpad(dir, is);
+                    prev[idx] = is;
+                });
+            }
 
             // Shoulders: R1 near, R2 far
             const { R1, R2 } = GPAD_CFG.shoulder;

@@ -81,7 +81,8 @@ bool tiltLastDirection = false;
 float tiltLastSpeed = 0.0;
 
 // --- Joystick and keyboard states ---
-bool joystickActive = false;
+bool joystickPanActive = false;
+bool joystickTiltActive = false;
 bool keyboardTiltActive = false;
 bool keyboardPanActive = false;
 bool rollingActive = false;
@@ -453,29 +454,31 @@ void handleJoystick(WiFiClient client, String request) {
     Serial.print(pan);
     Serial.print(" ");
     Serial.println(tilt);
-    // Map pan/tilt to direction and speed (use float speed)
+    
+    // Handle PAN axis
     if (pan > 0.05) {
-        runPanStepper(PAN_DEFAULT_SPEED * pan, LOW); // Change speed based on pan value
-        joystickActive = true;
+        runPanStepper(PAN_DEFAULT_SPEED * pan, LOW);
+        joystickPanActive = true;
     } else if (pan < -0.05) {
-        runPanStepper(PAN_DEFAULT_SPEED * -pan, HIGH); // Change speed based on pan value
-        joystickActive = true;
+        runPanStepper(PAN_DEFAULT_SPEED * -pan, HIGH);
+        joystickPanActive = true;
     } else {
-        pwm_set_chan_level(PAN_SLICE, PAN_CHAN, 0); //stop the pan stepper
-        joystickActive = false;
+        pwm_set_chan_level(PAN_SLICE, PAN_CHAN, 0);
+        joystickPanActive = false;
     }
+    
+    // Handle TILT axis (independent of pan)
     if (tilt > 0.05) {
-        runTiltStepper(TILT_DEFAULT_SPEED * tilt, LOW); // Change speed based on tilt value
-        joystickActive = true;
-
+        runTiltStepper(TILT_DEFAULT_SPEED * tilt, LOW);
+        joystickTiltActive = true;
     } else if (tilt < -0.05) {
-        runTiltStepper(TILT_DEFAULT_SPEED * -tilt, HIGH); // Change speed based on tilt value
-        joystickActive = true;
-
+        runTiltStepper(TILT_DEFAULT_SPEED * -tilt, HIGH);
+        joystickTiltActive = true;
     } else {
-        pwm_set_chan_level(TILT_SLICE, TILT_CHAN, 0); //stop the tilt stepper
-        joystickActive = false;
+        pwm_set_chan_level(TILT_SLICE, TILT_CHAN, 0);
+        joystickTiltActive = false;
     }
+    
     client.println("HTTP/1.1 200 OK");
     client.println("Content-type:application/json");
     client.println();
@@ -564,7 +567,8 @@ void handleStopAll(WiFiClient client) {
   panStepperActive = false;
   tiltStepperActive = false;
   rollStepperActive = false;
-  joystickActive = false;
+  joystickPanActive = false;
+  joystickTiltActive = false;
   rollingActive = false;
   keyboardTiltActive = false;
   keyboardPanActive = false;
@@ -1153,7 +1157,7 @@ void loop() {
     }
 
     /*******  OTHER STUFF TO DO IN VOID LOOP **********/
-    if(!left_arrow && !right_arrow && !up_arrow && !down_arrow && !joystickActive && !keyboardPanActive && !keyboardTiltActive && !rollingActive) {
+    if(!left_arrow && !right_arrow && !up_arrow && !down_arrow && !joystickPanActive && !joystickTiltActive && !keyboardPanActive && !keyboardTiltActive && !rollingActive) {
         pwm_set_chan_level(PAN_SLICE, PAN_CHAN, 0);
         pwm_set_chan_level(TILT_SLICE, TILT_CHAN, 0);
         pwm_set_chan_level(ROLL_SLICE, ROLL_CHAN, 0);
@@ -1161,7 +1165,7 @@ void loop() {
         panStepperActive = false;
         rollStepperActive = false;
     }
-    if (keyboardPanActive || joystickActive){
+    if (keyboardPanActive || joystickPanActive){
       lastpan = millis(); // Update last pan time
     }
     if (millis()-lastpan >= motor_timeout && !timeout_flag){

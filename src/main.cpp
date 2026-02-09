@@ -433,7 +433,14 @@ void handleCameraCommand(WiFiClient client, String request) {
   client.println("{\"status\":\"ok\"}");
 }
 
+// --- Joystick timeout ---
+unsigned long lastJoystickCommand = 0;
+const unsigned long joystickTimeout = 150; // ms - stop if no command received in 150ms
+
 void handleJoystick(WiFiClient client, String request) {
+    // Update timestamp for timeout detection
+    lastJoystickCommand = millis();
+    
     // Parse pan and tilt from /joystick?pan=X&tilt=Y (now as float)
     float pan = 0, tilt = 0;
     int panIdx = request.indexOf("pan=");
@@ -1046,7 +1053,7 @@ void loop() {
         else if (camera_command == PAN_TILT_MEDIUM){
             runTiltStepper(TILT_DEFAULT_SPEED/5, true); // up, medium
         }
-        else if (camera_command == PAN_TILT_FAST){
+        else if (camera_command == PAN_TILIT_TICK){
             runTiltStepper(TILT_DEFAULT_SPEED, true); // up, fast
         }
         if(camera_command>8 && camera_command<13){
@@ -1084,7 +1091,7 @@ void loop() {
         else if (camera_command == PAN_TILT_MEDIUM){
             runTiltStepper(TILT_DEFAULT_SPEED/5, false); // down, medium
         }
-        else if (camera_command == PAN_TILT_FAST){
+        else if (camera_command == PAN_TILIT_TICK){
             runTiltStepper(TILT_DEFAULT_SPEED, false); // down, fast
         }
         if(camera_command>8 && camera_command<13){
@@ -1157,6 +1164,16 @@ void loop() {
     }
 
     /*******  OTHER STUFF TO DO IN VOID LOOP **********/
+    
+    // Joystick timeout - auto-stop if no joystick command received recently
+    if ((joystickPanActive || joystickTiltActive) && (millis() - lastJoystickCommand > joystickTimeout)) {
+        pwm_set_chan_level(PAN_SLICE, PAN_CHAN, 0);
+        pwm_set_chan_level(TILT_SLICE, TILT_CHAN, 0);
+        joystickPanActive = false;
+        joystickTiltActive = false;
+        Serial.println("Joystick timeout - motors stopped");
+    }
+    
     if(!left_arrow && !right_arrow && !up_arrow && !down_arrow && !joystickPanActive && !joystickTiltActive && !keyboardPanActive && !keyboardTiltActive && !rollingActive) {
         pwm_set_chan_level(PAN_SLICE, PAN_CHAN, 0);
         pwm_set_chan_level(TILT_SLICE, TILT_CHAN, 0);

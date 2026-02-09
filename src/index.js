@@ -20,7 +20,12 @@ function startArrow(direction) {
 }
 
 function stopArrow(direction) {
-    sendDirectionCommand(direction, false);
+    // Send stop command multiple times to ensure it's received
+    for (let i = 0; i < 3; i++) {
+        setTimeout(() => {
+            sendDirectionCommand(direction, false);
+        }, i * 20);  // 0ms, 20ms, 40ms
+    }
 }
 
 // --- Camera Command Dropdown ---
@@ -252,7 +257,20 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('init-btn').addEventListener('click', function() {
         document.getElementById('init-modal').classList.remove('hidden');
         document.getElementById('init-warning').style.display = 'block';
-        pollInitStatus(true);
+        
+        // Call the init_camera endpoint to start initialization
+        fetch('/init_camera')
+            .then(response => response.json())
+            .then(data => {
+                console.log('Camera initialization started:', data);
+                // Start polling to detect when initialization is complete
+                pollInitStatus(true);
+            })
+            .catch(error => {
+                console.error('Error starting camera initialization:', error);
+                // Still poll in case the request went through
+                pollInitStatus(true);
+            });
     });
 
     const heading = document.getElementById('camera-heading');
@@ -413,23 +431,42 @@ document.addEventListener('DOMContentLoaded', function() {
     let lastZoomActive = false;
     let lastZoomDir = null;
     let lastZoomRegime = 1;
-    const prevButtons = {};  // Add this line - tracks previous button states per gamepad
+    let joystickWasActive = false;  // Track if joystick was previously active
+    const prevButtons = {};
 
     function sendGamepadPanTilt(panNorm, tiltNorm) {
         const now = Date.now();
         
-        // Time-based throttle only (removed delta filter for responsiveness)
+        // Time-based throttle
         if (now - lastGpadJoystickSend < GPAD_CFG.joystickThrottleMs) return;
 
-        // Only skip if BOTH axes are truly unchanged (exact match or both near zero)
-        const panStopped = Math.abs(panNorm) < 0.01 && Math.abs(lastPanTiltSent.pan) < 0.01;
-        const tiltStopped = Math.abs(tiltNorm) < 0.01 && Math.abs(lastPanTiltSent.tilt) < 0.01;
-        if (panStopped && tiltStopped) return;  // Don't spam zero commands
-
+        const isActive = Math.abs(panNorm) >= 0.01 || Math.abs(tiltNorm) >= 0.01;
+        const wasActive = joystickWasActive;
+        
+        // Always send if:
+        // 1. Joystick is active (moving)
+        // 2. Joystick just became inactive (need to send stop command)
+        if (!isActive && !wasActive) {
+            // Both currently and previously inactive - skip
+            return;
+        }
+        
+        // Send the command
         lastPanTiltSent = { pan: panNorm, tilt: tiltNorm };
         lastGpadJoystickSend = now;
+        joystickWasActive = isActive;
 
-        fetch(`/joystick?pan=${panNorm.toFixed(3)}&tilt=${tiltNorm.toFixed(3)}`).then(r=>r.json()).catch(()=>{});
+        // If transitioning to inactive, send stop command multiple times
+        if (!isActive && wasActive) {
+            // Send stop command 3 times with small delays to ensure it's received
+            for (let i = 0; i < 3; i++) {
+                setTimeout(() => {
+                    fetch(`/joystick?pan=0&tilt=0`).catch(()=>{});
+                }, i * 20);  // 0ms, 20ms, 40ms
+            }
+        } else {
+            fetch(`/joystick?pan=${panNorm.toFixed(3)}&tilt=${tiltNorm.toFixed(3)}`).then(r=>r.json()).catch(()=>{});
+        }
     }
 
     function focusNearStart() {
@@ -510,8 +547,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             } else {
                 if (lastZoomActive) {
-                    fetch('/direction/up/off').catch(()=>{});
-                    fetch('/direction/down/off').catch(()=>{});
+                    // Send stop commands multiple times to ensure they're received
+                    for (let j = 0; j < 3; j++) {
+                        setTimeout(() => {
+                            fetch('/direction/up/off').catch(()=>{});
+                            fetch('/direction/down/off').catch(()=>{});
+                        }, j * 20);  // 0ms, 20ms, 40ms
+                    }
                     selectCommand(1);
                     lastZoomRegime = 1;
                     lastZoomDir = null;
@@ -639,7 +681,12 @@ function startRoll(direction) {
 }
 
 function stopRoll(direction) {
-    fetch(`/roll/${direction}/off`).catch(()=>{});
+    // Send stop command multiple times to ensure it's received
+    for (let i = 0; i < 3; i++) {
+        setTimeout(() => {
+            fetch(`/roll/${direction}/off`).catch(()=>{});
+        }, i * 20);  // 0ms, 20ms, 40ms
+    }
 }
 
 function showResetModal() {

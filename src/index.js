@@ -58,6 +58,12 @@ function sendKeyboardDirection(dir, state) {
     fetch(`/keyboard/${dir}/${state ? 'on' : 'off'}`).catch(()=>{});
 }
 
+// --- Keyboard Zoom Logic ---
+function sendKeyboardZoom(dir, state) {
+    // dir is 'zoomin' or 'zoomout'
+    fetch(`/keyboard/${dir}/${state ? 'on' : 'off'}`).catch(()=>{});
+}
+
 // ===== Gamepad helpers and config =====
 const GPAD_CFG = {
   deadZone: 0.15,
@@ -124,6 +130,18 @@ document.addEventListener('keydown', (event) => {
                 sendKeyboardDirection(event.code.replace('Arrow', '').toLowerCase(), true);
             }
             break;
+        case 'KeyZ':
+            if (!keyState[event.code]) {
+                keyState[event.code] = true;
+                sendKeyboardZoom('zoomin', true);
+            }
+            break;
+        case 'KeyX':
+            if (!keyState[event.code]) {
+                keyState[event.code] = true;
+                sendKeyboardZoom('zoomout', true);
+            }
+            break;
     }
 });
 
@@ -142,12 +160,33 @@ document.addEventListener('keyup', (event) => {
                 }
             }
             break;
+        case 'KeyZ':
+            event.preventDefault();
+            if (keyState[event.code]) {
+                keyState[event.code] = false;
+                for (let i = 0; i < 3; i++) {
+                    sendKeyboardZoom('zoomin', false);
+                }
+            }
+            break;
+        case 'KeyX':
+            event.preventDefault();
+            if (keyState[event.code]) {
+                keyState[event.code] = false;
+                for (let i = 0; i < 3; i++) {
+                    sendKeyboardZoom('zoomout', false);
+                }
+            }
+            break;
     }
 });
 
 // Failsafe: stop all on blur/unload
 window.addEventListener('blur', stopAll);
 window.addEventListener('beforeunload', stopAll);
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopAll();
+});
 
 // Poll function: if modalMode is true, keep polling until initialized and hide modal when done
 function pollInitStatus(modalMode = false) {
@@ -174,74 +213,82 @@ function pollInitStatus(modalMode = false) {
 document.addEventListener('DOMContentLoaded', function() {
     pollInitStatus(false);
     statusInterval = setInterval(updateStatus, 5000);
-    document.getElementById('btn-up').addEventListener('mousedown', () => startArrow('up'));
-    document.getElementById('btn-up').addEventListener('mouseup', () => stopArrow('up'));
-    document.getElementById('btn-down').addEventListener('mousedown', () => startArrow('down'));
-    document.getElementById('btn-down').addEventListener('mouseup', () => stopArrow('down'));
-    document.getElementById('btn-left').addEventListener('mousedown', () => startArrow('left'));
-    document.getElementById('btn-left').addEventListener('mouseup', () => stopArrow('left'));
-    document.getElementById('btn-right').addEventListener('mousedown', () => startArrow('right'));
-    document.getElementById('btn-right').addEventListener('mouseup', () => stopArrow('right'));
-
-    // Roll button event listeners
-    document.getElementById('btn-roll-ccw').addEventListener('mousedown', () => startRoll('ccw'));
-    document.getElementById('btn-roll-ccw').addEventListener('mouseup', () => stopRoll('ccw'));
-    document.getElementById('btn-roll-ccw').addEventListener('mouseleave', () => stopRoll('ccw'));
-    document.getElementById('btn-roll-ccw').addEventListener('touchstart', (e) => { e.preventDefault(); startRoll('ccw'); });
-    document.getElementById('btn-roll-ccw').addEventListener('touchend', (e) => { e.preventDefault(); stopRoll('ccw'); });
-
-    document.getElementById('btn-roll-cw').addEventListener('mousedown', () => startRoll('cw'));
-    document.getElementById('btn-roll-cw').addEventListener('mouseup', () => stopRoll('cw'));
-    document.getElementById('btn-roll-cw').addEventListener('mouseleave', () => stopRoll('cw'));
-    document.getElementById('btn-roll-cw').addEventListener('touchstart', (e) => { e.preventDefault(); startRoll('cw'); });
-    document.getElementById('btn-roll-cw').addEventListener('touchend', (e) => { e.preventDefault(); stopRoll('cw'); });
     
-    // Stop arrow on mouseleave/blur for all buttons
-    ['up', 'down', 'left', 'right'].forEach(dir => {
-        const btn = document.getElementById(`btn-${dir}`);
+    // Helper to create robust button handlers with triple-send on release
+    function setupDirectionButton(btnId, direction) {
+        const btn = document.getElementById(btnId);
         if (!btn) return;
-        btn.addEventListener('mouseleave', () => stopArrow(dir));
-        btn.addEventListener('blur', () => stopArrow(dir));
-    });
-
-    // Stop roll on mouseleave/blur for roll buttons
-    ['ccw', 'cw'].forEach(dir => {
-        const btn = document.getElementById(`btn-roll-${dir}`);
+        
+        let isPressed = false;
+        
+        function startPress() {
+            if (!isPressed) {
+                isPressed = true;
+                startArrow(direction);
+            }
+        }
+        
+        function endPress() {
+            if (isPressed) {
+                isPressed = false;
+                stopArrow(direction); // Already sends 3 times
+            }
+        }
+        
+        btn.addEventListener('mousedown', startPress);
+        btn.addEventListener('mouseup', endPress);
+        btn.addEventListener('mouseleave', endPress);
+        btn.addEventListener('blur', endPress);
+        btn.addEventListener('touchstart', (e) => { e.preventDefault(); startPress(); });
+        btn.addEventListener('touchend', (e) => { e.preventDefault(); endPress(); });
+        btn.addEventListener('touchcancel', (e) => { e.preventDefault(); endPress(); });
+        btn.addEventListener('contextmenu', (e) => e.preventDefault());
+    }
+    
+    function setupRollButton(btnId, direction) {
+        const btn = document.getElementById(btnId);
         if (!btn) return;
-        btn.addEventListener('mouseleave', () => stopRoll(dir));
-        btn.addEventListener('blur', () => stopRoll(dir));
-    });
-
-    // disable context menu for arrow buttons
-    ['up', 'down', 'left', 'right'].forEach(dir => {
-        const btn = document.getElementById(`btn-${dir}`);
-        if (!btn) return;
-        btn.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            startArrow(dir);
-        });
-        btn.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            stopArrow(dir);
-        });
-        btn.addEventListener('mouseleave', () => stopArrow(dir));
-        btn.addEventListener('blur', () => stopArrow(dir));
-    });
-
-    // disable context menu for roll buttons
-    ['ccw', 'cw'].forEach(dir => {
-        const btn = document.getElementById(`btn-roll-${dir}`);
-        if (!btn) return;
-        btn.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            startRoll(dir);
-        });
-        btn.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            stopRoll(dir);
-        });
-        btn.addEventListener('mouseleave', () => stopRoll(dir));
-        btn.addEventListener('blur', () => stopRoll(dir));
+        
+        let isPressed = false;
+        
+        function startPress() {
+            if (!isPressed) {
+                isPressed = true;
+                startRoll(direction);
+            }
+        }
+        
+        function endPress() {
+            if (isPressed) {
+                isPressed = false;
+                stopRoll(direction); // Already sends 3 times
+            }
+        }
+        
+        btn.addEventListener('mousedown', startPress);
+        btn.addEventListener('mouseup', endPress);
+        btn.addEventListener('mouseleave', endPress);
+        btn.addEventListener('blur', endPress);
+        btn.addEventListener('touchstart', (e) => { e.preventDefault(); startPress(); });
+        btn.addEventListener('touchend', (e) => { e.preventDefault(); endPress(); });
+        btn.addEventListener('touchcancel', (e) => { e.preventDefault(); endPress(); });
+        btn.addEventListener('contextmenu', (e) => e.preventDefault());
+    }
+    
+    // Setup direction buttons
+    setupDirectionButton('btn-up', 'up');
+    setupDirectionButton('btn-down', 'down');
+    setupDirectionButton('btn-left', 'left');
+    setupDirectionButton('btn-right', 'right');
+    
+    // Setup roll buttons
+    setupRollButton('btn-roll-ccw', 'ccw');
+    setupRollButton('btn-roll-cw', 'cw');
+    
+    // Global failsafe: stop all when clicking outside button area
+    document.addEventListener('mouseup', () => {
+        // Small delay to let button-specific handlers fire first
+        setTimeout(stopAll, 100);
     });
 
     document.getElementById('stop-all-btn').addEventListener('click', stopAll);

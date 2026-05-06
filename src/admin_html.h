@@ -1,7 +1,7 @@
 #ifndef ADMIN_HTML_H
 #define ADMIN_HTML_H
 
-const char admin_html[] PROGMEM = R"rawliteral(
+const char admin_html_1[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -52,47 +52,93 @@ const char admin_html[] PROGMEM = R"rawliteral(
   </div>
   <script>
     function uploadFile(type) {
-      const fileInput = document.getElementById(type + 'File');
-      const statusDiv = document.getElementById(type + '-status');
-      const progressBar = document.getElementById(type + '-progress');
+      var fileInput = document.getElementById(type + 'File');
+      var statusDiv = document.getElementById(type + '-status');
+      var progressBar = document.getElementById(type + '-progress');
       if (!fileInput.files.length) {
-        statusDiv.innerText = "Please select a file.";
+        setStatus(statusDiv, 'Please select a file.', '');
         return;
       }
-      const file = fileInput.files[0];
-      statusDiv.innerText = "Uploading...";
+      var file = fileInput.files[0];
+      setStatus(statusDiv, 'Uploading...', '');
       progressBar.value = 0;
-      progressBar.style.display = "block";
-      let endpoint = '';
+      progressBar.style.display = 'block';
+
+      var endpoint = '';
       if (type === 'firmware') endpoint = '/upload';
       else if (type === 'html') endpoint = '/upload_html';
       else if (type === 'css') endpoint = '/upload_css';
       else if (type === 'js') endpoint = '/upload_js';
       else return;
 
-      const xhr = new XMLHttpRequest();
+      var xhr = new XMLHttpRequest();
       xhr.open('POST', endpoint, true);
       xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+
       xhr.upload.onprogress = function(e) {
         if (e.lengthComputable) {
-          const percent = Math.round((e.loaded / e.total) * 100);
-          progressBar.value = percent;
-          statusDiv.innerText = `Uploading... ${percent}%`;
+          var pct = Math.round((e.loaded / e.total) * 100);
+          progressBar.value = pct;
+          setStatus(statusDiv, 'Uploading... ' + pct + '%', '');
         }
       };
+
       xhr.onload = function() {
-        progressBar.style.display = "none";
-        if (xhr.status === 200) {
-          statusDiv.innerText = xhr.responseText;
+        progressBar.style.display = 'none';
+        if (type === 'firmware') {
+          // 200 received before the reset completed - device is rebooting
+          pollForReboot(statusDiv);
         } else {
-          statusDiv.innerText = "Upload failed: " + xhr.statusText;
+          if (xhr.status === 200) {
+            setStatus(statusDiv, xhr.responseText || 'Upload complete.', 'ok');
+          } else {
+            setStatus(statusDiv, 'Upload failed: ' + xhr.statusText, 'err');
+          }
         }
       };
+)rawliteral";
+
+const char admin_html_2[] PROGMEM = R"rawliteral(
       xhr.onerror = function() {
-        progressBar.style.display = "none";
-        statusDiv.innerText = "Upload failed: Network error";
+        progressBar.style.display = 'none';
+        if (type === 'firmware') {
+          // Connection drop is expected: device reset itself after writing flash.
+          // This is NOT an error - treat it as a successful transfer.
+          pollForReboot(statusDiv);
+        } else {
+          setStatus(statusDiv, 'Upload failed: Network error', 'err');
+        }
       };
+
       xhr.send(file);
+    }
+
+    function pollForReboot(statusDiv) {
+      setStatus(statusDiv, 'Firmware written. Device rebooting...', '');
+      var elapsed = 0;
+      var maxWait = 60;
+      var interval = setInterval(function() {
+        elapsed += 2;
+        setStatus(statusDiv, 'Rebooting\u2026 ' + elapsed + 's', '');
+        fetch('/status')
+          .then(function(r) {
+            if (r.ok) {
+              clearInterval(interval);
+              setStatus(statusDiv, '\u2713 Device back online! Update applied.', 'ok');
+            }
+          })
+          .catch(function() {
+            if (elapsed >= maxWait) {
+              clearInterval(interval);
+              setStatus(statusDiv, 'Timed out waiting for device. Check Serial.', 'err');
+            }
+          });
+      }, 2000);
+    }
+
+    function setStatus(el, msg, state) {
+      el.innerText = msg;
+      el.style.color = state === 'ok' ? '#00c853' : state === 'err' ? '#f44336' : '#009acd';
     }
   </script>
 </body>

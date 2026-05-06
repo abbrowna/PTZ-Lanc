@@ -87,6 +87,10 @@ bool joystickTiltActive = false;
 bool keyboardTiltActive = false;
 bool keyboardPanActive = false;
 bool rollingActive = false;
+bool keyboardZoomInActive = false;
+bool keyboardZoomOutActive = false;
+int lastZoomSpeed = 1;        // Last zoom speed (1-7) used by Z/X keyboard zoom
+unsigned long keyboardZoomLastOn = 0;
 
 //----speed calculation for sterpper motor----
 // Gear ratios
@@ -330,7 +334,8 @@ void handleAdmin(WiFiClient client) {
     client.println("HTTP/1.1 200 OK");
     client.println("Content-type: text/html");
     client.println();
-    client.print(admin_html);
+    client.print(admin_html_1);
+    client.print(admin_html_2);
 }
 
 void handleCSS(WiFiClient client) {
@@ -456,6 +461,10 @@ void handleCameraCommand(WiFiClient client, String request) {
     Serial.println("Camera command updated");
     Serial.print("camera_command: ");
     Serial.println(camera_command);
+    // Track last zoom speed so Z/X keys can recall it independently
+    if (camera_command >= ZOOM_1 && camera_command <= ZOOM_7) {
+        lastZoomSpeed = camera_command;
+    }
   }
 
   client.println("HTTP/1.1 200 OK");
@@ -554,6 +563,18 @@ void handleKeypress(WiFiClient client, String request) {
         pwm_set_chan_level(PAN_SLICE, PAN_CHAN, 0);
         panStepperActive = false;
         keyboardPanActive = false;
+    } else if (request.indexOf("/keyboard/zoomin/on") >= 0) {
+        keyboardZoomInActive = true;
+        keyboardZoomOutActive = false;
+        keyboardZoomLastOn = millis();
+    } else if (request.indexOf("/keyboard/zoomin/off") >= 0) {
+        keyboardZoomInActive = false;
+    } else if (request.indexOf("/keyboard/zoomout/on") >= 0) {
+        keyboardZoomOutActive = true;
+        keyboardZoomInActive = false;
+        keyboardZoomLastOn = millis();
+    } else if (request.indexOf("/keyboard/zoomout/off") >= 0) {
+        keyboardZoomOutActive = false;
     }
     client.println("HTTP/1.1 200 OK");
     client.println("Content-type:application/json");
@@ -610,6 +631,8 @@ void handleStopAll(WiFiClient client) {
   rollingActive = false;
   keyboardTiltActive = false;
   keyboardPanActive = false;
+  keyboardZoomInActive = false;
+  keyboardZoomOutActive = false;
   Serial.println("All motors stopped and state reset.");
 
   client.println("HTTP/1.1 200 OK");
@@ -662,10 +685,17 @@ void handleOTAUpload(WiFiClient& client, long contentLength) {
   Serial.print("OTA upload complete, bytes written: ");
   Serial.println(bytesWritten);
 
+  // Send response, then flush and close the TCP connection cleanly before
+  // resetting — otherwise NVIC_SystemReset() kills the TCP stack mid-send
+  // and the browser never receives the 200, leaving the progress bar stuck.
   client.println("HTTP/1.1 200 OK");
   client.println("Content-type:text/plain");
   client.println();
-  client.println("Upload complete. Rebooting to apply update...");
+  client.println("OK");
+  client.flush();
+  delay(500);
+  client.stop();
+  delay(1000);
 
   NVIC_SystemReset();
 }
@@ -1268,6 +1298,22 @@ void loop() {
         }
         if(camera_command>8 && camera_command<13){
             left_arrow = false;
+        }
+    }
+
+    /*******  KEYBOARD ZOOM (Z/X keys) **********/
+    // Uses lastZoomSpeed so it works regardless of the active camera_command
+    if (keyboardZoomInActive) {
+        if (millis() - keyboardZoomLastOn > keyboardTimeout) {
+            keyboardZoomInActive = false;
+        } else {
+            lancCommand(ZOOM_IN[lastZoomSpeed - 1]);
+        }
+    } else if (keyboardZoomOutActive) {
+        if (millis() - keyboardZoomLastOn > keyboardTimeout) {
+            keyboardZoomOutActive = false;
+        } else {
+            lancCommand(ZOOM_OUT[lastZoomSpeed - 1]);
         }
     }
 

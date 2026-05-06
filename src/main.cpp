@@ -2,6 +2,7 @@
 #include "lancCommands.h"
 #include "index_html.h"
 #include "admin_html.h"
+#include "lanc_test_html.h"
 //#include "mbed.h"
 #include <ArduinoOTA.h>
 #include <SFU.h>
@@ -34,10 +35,10 @@ bool camera_initialized = false;
 #define rollSTEPPin 6 //using pin 6 because due to hardware bug of the rp2040 on slice 1 channel 1 which maps to pin 7
 
 
-const char* ssid = "MOTHAK IOT";
-const char* password = "6Y6ADQM434H";
-//const char* ssid = "Brownsville";
-//const char* password = "ilyz6338";
+//const char* ssid = "MOTHAK IOT";
+//const char* password = "6Y6ADQM434H";
+const char* ssid = "Brownsville";
+const char* password = "ilyz6338";
 
 FileSystemStorageClass FSStorage;
 WiFiServer server(80);
@@ -212,8 +213,17 @@ void lancCommand(const LancCommand &command) {
 }
 
 // Function to send a sequence of Lanc commands i.e. a Macro
-void lancMacro(const LancCommand* commands, size_t length) {
+// selectDelayMs: if > 0, adds this many ms of extra delay immediately before any
+//                SELECT command, on top of the normal 100ms inter-command gap.
+//                Use this for macros that mix fast navigation with SELECT actions
+//                so the camera has time to commit without slowing down every step.
+void lancMacro(const LancCommand* commands, size_t length, uint32_t selectDelayMs = 0) {
     for (size_t j = 0; j < length; j++) {
+        if (selectDelayMs > 0 &&
+            commands[j].byte0 == SELECT.byte0 &&
+            commands[j].byte1 == SELECT.byte1) {
+            delay(selectDelayMs);
+        }
         for (int i = 0; i < 5; i++) {
             while (pulseIn(lancPin, HIGH) < 5000);
             delayMicroseconds(bitDuration);
@@ -245,6 +255,27 @@ void initializeCamera() {
   Serial.println("Setting default value for white balance");
   lancMacro(WB_default, sizeof(WB_default) / sizeof(LancCommand));
   Serial.println("Camera initialization complete.");
+  camera_initialized = true;
+}
+
+void powerOnCamera() {
+  // Hold LANC TIP low for 200ms to wake camera from standby
+  digitalWrite(cmdPin, HIGH);
+  delay(200);
+  digitalWrite(cmdPin, LOW);
+}
+
+void startupSequence() {
+  camera_initialized = false;
+  Serial.println("Startup: powering off camera...");
+  lancCommand(POWER_OFF);
+  delay(10000);
+  Serial.println("Startup: powering on camera...");
+  powerOnCamera();
+  delay(20000);  // 20s: camera needs time to fully initialise LANC + menu system
+  Serial.println("Startup: running SD card reset macro...");
+  lancMacro(SD_card_reset, sizeof(SD_card_reset) / sizeof(LancCommand), 1000);  // 1s between cmds
+  Serial.println("Startup sequence complete.");
   camera_initialized = true;
 }
 
@@ -548,7 +579,7 @@ void handleInitCamera(WiFiClient client) {
   client.println("Content-type:application/json");
   client.println();
   client.println("{\"status\":\"initializing\"}");
-  initializeCamera();
+  startupSequence();
 }
 
 void handleInitStatus(WiFiClient client) {
@@ -660,6 +691,77 @@ void handleRoll(WiFiClient client, String request) {
     client.println("Content-type:application/json");
     client.println();
     client.println("{\"status\":\"ok\"}");
+}
+
+void handleLancTest(WiFiClient client) {
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-type: text/html");
+    client.println();
+    client.print(lanc_test_html_1);
+    client.print(lanc_test_html_2);
+    client.print(lanc_test_html_3);
+    client.print(lanc_test_html_4);
+}
+
+void handleLancRaw(WiFiClient client, String request) {
+    // Parse b0, b1, and optional repeat count from query string
+    // e.g. GET /lanc_raw?b0=28&b1=00&repeat=3
+    uint8_t b0 = 0, b1 = 0;
+    int repeatCount = 1;
+
+    int b0Idx = request.indexOf("b0=");
+    if (b0Idx >= 0) {
+        String b0Str = request.substring(b0Idx + 3, b0Idx + 5);
+        b0Str.trim();
+        b0 = (uint8_t)strtoul(b0Str.c_str(), NULL, 16);
+    }
+
+    int b1Idx = request.indexOf("b1=");
+    if (b1Idx >= 0) {
+        String b1Str = request.substring(b1Idx + 3, b1Idx + 5);
+        b1Str.trim();
+        b1 = (uint8_t)strtoul(b1Str.c_str(), NULL, 16);
+    }
+
+    int repIdx = request.indexOf("repeat=");
+    if (repIdx >= 0) {
+        String repStr = request.substring(repIdx + 7);
+        int end = repStr.indexOf(' ');
+        if (end < 0) end = repStr.indexOf('&');
+        if (end > 0) repStr = repStr.substring(0, end);
+        repeatCount = repStr.toInt();
+        if (repeatCount < 1)  repeatCount = 1;
+        if (repeatCount > 20) repeatCount = 20;
+    }
+
+    Serial.print("LANC Raw: 0x");
+    Serial.print(b0, HEX);
+    Serial.print(", 0x");
+    Serial.print(b1, HEX);
+    Serial.print(" x");
+    Serial.println(repeatCount);
+
+    LancCommand cmd = {b0, b1};
+    // Use the same lancCommand() bit-banging for a single iteration,
+    // or chain multiple with 100ms gap (matching lancMacro behaviour).
+    if (repeatCount == 1) {
+        lancCommand(cmd);
+    } else {
+        for (int i = 0; i < repeatCount; i++) {
+            lancCommand(cmd);
+            delay(100);
+        }
+    }
+
+    char response[80];
+    snprintf(response, sizeof(response),
+             "{\"status\":\"ok\",\"b0\":\"0x%02X\",\"b1\":\"0x%02X\",\"repeat\":%d}",
+             b0, b1, repeatCount);
+
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-type:application/json");
+    client.println();
+    client.println(response);
 }
 
 void pollMDNS() {
@@ -913,6 +1015,9 @@ void setup() {
   
   // Start the server
   server.begin();
+
+  // Run startup sequence: power cycle camera and load settings from SD card
+  startupSequence();
 }
 
 
@@ -961,8 +1066,11 @@ void loop() {
                 else if (request.indexOf("GET /admin") >= 0) {
                   handleAdmin(client);
                 }
-                else if (request.indexOf("GET /admin") >= 0) {
-                  handleAdmin(client);
+                else if (request.indexOf("GET /lanc_test") >= 0) {
+                  handleLancTest(client);
+                }
+                else if (request.indexOf("GET /lanc_raw") >= 0) {
+                  handleLancRaw(client, request);
                 }
                 else if (request.indexOf("POST /upload_html") >= 0) {
                   handleStaticUpload(client, contentLength, StaticStorageClass::HTML, "HTML");

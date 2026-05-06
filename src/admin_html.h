@@ -21,6 +21,7 @@ const char admin_html[] PROGMEM = R"rawliteral(
 </head>
 <body>
   <h1>PTZ Admin Upload</h1>
+  <p><a href="/lanc_test" style="color:#00bfff;">&#9654; LANC Command Test</a></p>
   <div class="upload-block">
     <label for="firmwareFile">Firmware (.bin):</label>
     <input type="file" id="firmwareFile" accept=".bin">

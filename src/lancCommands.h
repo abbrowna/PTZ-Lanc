@@ -20,10 +20,19 @@ const LancCommand ZOOM_OUT[] = {{0x1E, 0x11}, {0x1E, 0x13}, {0x1E, 0x15}, {0x1E,
                                  {0x1E, 0x19}, {0x1E, 0x1B}, {0x1E, 0x1D}, {0x1E, 0x1F}};
 */
 const LancCommand FOCUS_NEAR = {0x28, 0x47};
-const LancCommand FOCUS_FAR = {0x28, 0x45};
-const LancCommand UP = {0x18, 0x84};
-const LancCommand DOWN = {0x18, 0x86};
-const LancCommand SELECT = {0x18, 0xA2};
+const LancCommand FOCUS_FAR  = {0x28, 0x45};
+const LancCommand UP         = {0x18, 0x84};
+const LancCommand DOWN       = {0x18, 0x86};
+const LancCommand SELECT     = {0x18, 0xA2};
+const LancCommand POWER_OFF  = {0x18, 0x5E};
+const LancCommand MENU_RIGHT     = {0x18, 0xC2};
+const LancCommand MENU_LEFT = {0x18, 0xC4};
+const LancCommand MENU_ENTER_EXIT = {0x18, 0x9A};
+
+// SD card reset: enter menu, right x2, up x6, select, up, select, up, select
+const LancCommand SD_card_reset[] = {
+    MENU_ENTER_EXIT, MENU_RIGHT, MENU_RIGHT, UP, UP, UP, UP, UP, UP, SELECT, UP, SELECT, UP, SELECT
+};
 
 const LancCommand WB_DEC_K[] = {SELECT, DOWN, DOWN, DOWN, SELECT, SELECT, DOWN, DOWN, SELECT, UP, SELECT};
 const LancCommand WB_INC_K[] = {SELECT, DOWN, DOWN, DOWN, SELECT, SELECT, DOWN, DOWN, DOWN, SELECT, UP, UP, SELECT};

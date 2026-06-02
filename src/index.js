@@ -262,6 +262,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (isPressed) {
                 isPressed = false;
                 stopRoll(direction); // Already sends 3 times
+                btn.blur();
             }
         }
         

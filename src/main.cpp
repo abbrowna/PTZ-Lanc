@@ -35,10 +35,10 @@ bool camera_initialized = false;
 #define rollSTEPPin 6 //using pin 6 because due to hardware bug of the rp2040 on slice 1 channel 1 which maps to pin 7
 
 
-//const char* ssid = "MOTHAK IOT";
-//const char* password = "6Y6ADQM434H";
-const char* ssid = "Brownsville";
-const char* password = "ilyz6338";
+const char* ssid = "MOTHAK IOT";
+const char* password = "6Y6ADQM434H";
+//const char* ssid = "Brownsville";
+//const char* password = "ilyz6338";
 
 FileSystemStorageClass FSStorage;
 WiFiServer server(80);

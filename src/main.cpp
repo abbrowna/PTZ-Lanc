@@ -91,6 +91,7 @@ bool keyboardZoomInActive = false;
 bool keyboardZoomOutActive = false;
 int lastZoomSpeed = 1;        // Last zoom speed (1-7) used by Z/X keyboard zoom
 unsigned long keyboardZoomLastOn = 0;
+int lastKeyboardPanTiltSpeed = 14; // Last pan/tilt speed selected (13=fast, 14=medium, 15=slow)
 
 //----speed calculation for sterpper motor----
 // Gear ratios
@@ -465,6 +466,10 @@ void handleCameraCommand(WiFiClient client, String request) {
     if (camera_command >= ZOOM_1 && camera_command <= ZOOM_7) {
         lastZoomSpeed = camera_command;
     }
+    // Track last pan/tilt speed so arrow keys use it regardless of current camera command
+    if (camera_command == PAN_TILT_FAST || camera_command == PAN_TILT_MEDIUM || camera_command == PAN_TILT_SLOW) {
+        lastKeyboardPanTiltSpeed = camera_command;
+    }
   }
 
   client.println("HTTP/1.1 200 OK");
@@ -536,28 +541,40 @@ const unsigned long keyboardTimeout = 1300; // ms
 
 void handleKeypress(WiFiClient client, String request) {
     if (request.indexOf("/keyboard/up/on") >= 0) {
-        runTiltStepper(TILT_DEFAULT_SPEED/5, HIGH); // Change to default key speed
+        float tiltSpd = (lastKeyboardPanTiltSpeed == PAN_TILT_FAST)  ? TILT_DEFAULT_SPEED :
+                        (lastKeyboardPanTiltSpeed == PAN_TILT_SLOW)  ? TILT_DEFAULT_SPEED / 25 :
+                                                                        TILT_DEFAULT_SPEED / 5;
+        runTiltStepper(tiltSpd, HIGH);
         keyboardTiltActive = true;
     } else if (request.indexOf("/keyboard/up/off") >= 0) {
         pwm_set_chan_level(TILT_SLICE, TILT_CHAN, 0);
         tiltStepperActive = false;
         keyboardTiltActive = false;
     } else if (request.indexOf("/keyboard/down/on") >= 0) {
-        runTiltStepper(TILT_DEFAULT_SPEED/5, LOW); // Change to default key speed
+        float tiltSpd = (lastKeyboardPanTiltSpeed == PAN_TILT_FAST)  ? TILT_DEFAULT_SPEED :
+                        (lastKeyboardPanTiltSpeed == PAN_TILT_SLOW)  ? TILT_DEFAULT_SPEED / 25 :
+                                                                        TILT_DEFAULT_SPEED / 5;
+        runTiltStepper(tiltSpd, LOW);
         keyboardTiltActive = true;
     } else if (request.indexOf("/keyboard/down/off") >= 0) {
         pwm_set_chan_level(TILT_SLICE, TILT_CHAN, 0);
         tiltStepperActive = false;
         keyboardTiltActive = false;
     } else if (request.indexOf("/keyboard/left/on") >= 0) {
-        runPanStepper(PAN_DEFAULT_SPEED/5, HIGH); // Change to default key speed
+        float panSpd = (lastKeyboardPanTiltSpeed == PAN_TILT_FAST)  ? PAN_DEFAULT_SPEED :
+                       (lastKeyboardPanTiltSpeed == PAN_TILT_SLOW)  ? PAN_DEFAULT_SPEED / 25 :
+                                                                       PAN_DEFAULT_SPEED / 5;
+        runPanStepper(panSpd, HIGH);
         keyboardPanActive = true;
     } else if (request.indexOf("/keyboard/left/off") >= 0) {
         pwm_set_chan_level(PAN_SLICE, PAN_CHAN, 0);
         panStepperActive = false;
         keyboardPanActive = false;
     } else if (request.indexOf("/keyboard/right/on") >= 0) {
-        runPanStepper(PAN_DEFAULT_SPEED/5, LOW); // Change to default key speed
+        float panSpd = (lastKeyboardPanTiltSpeed == PAN_TILT_FAST)  ? PAN_DEFAULT_SPEED :
+                       (lastKeyboardPanTiltSpeed == PAN_TILT_SLOW)  ? PAN_DEFAULT_SPEED / 25 :
+                                                                       PAN_DEFAULT_SPEED / 5;
+        runPanStepper(panSpd, LOW);
         keyboardPanActive = true;
     } else if (request.indexOf("/keyboard/right/off") >= 0) {
         pwm_set_chan_level(PAN_SLICE, PAN_CHAN, 0);
@@ -1302,19 +1319,13 @@ void loop() {
     }
 
     /*******  KEYBOARD ZOOM (Z/X keys) **********/
-    // Uses lastZoomSpeed so it works regardless of the active camera_command
+    // Uses lastZoomSpeed so it works regardless of the active camera_command.
+    // Flags are cleared only by an explicit off command from the frontend
+    // (keyup sends 3 off requests to ensure at least one arrives).
     if (keyboardZoomInActive) {
-        if (millis() - keyboardZoomLastOn > keyboardTimeout) {
-            keyboardZoomInActive = false;
-        } else {
-            lancCommand(ZOOM_IN[lastZoomSpeed - 1]);
-        }
+        lancCommand(ZOOM_IN[lastZoomSpeed - 1]);
     } else if (keyboardZoomOutActive) {
-        if (millis() - keyboardZoomLastOn > keyboardTimeout) {
-            keyboardZoomOutActive = false;
-        } else {
-            lancCommand(ZOOM_OUT[lastZoomSpeed - 1]);
-        }
+        lancCommand(ZOOM_OUT[lastZoomSpeed - 1]);
     }
 
     /*******  OTHER STUFF TO DO IN VOID LOOP **********/

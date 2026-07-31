@@ -53,6 +53,8 @@ WiFiUDP claimUDP;
 
 const uint16_t CLAIM_PORT = 5354;
 
+WiFiUDP controlUDP;
+const uint16_t CONTROL_PORT = 5355;
 
 int bitDuration = 104; // Duration of one LANC bit in microseconds
 
@@ -92,6 +94,8 @@ bool keyboardZoomOutActive = false;
 int lastZoomSpeed = 1;        // Last zoom speed (1-7) used by Z/X keyboard zoom
 unsigned long keyboardZoomLastOn = 0;
 int lastKeyboardPanTiltSpeed = 14; // Last pan/tilt speed selected (13=fast, 14=medium, 15=slow)
+unsigned long lastKeyboardCommandMs = 0;      // UDP keep-alive timestamp for KEY commands
+const unsigned long KEY_UDP_TIMEOUT_MS = 300; // Stop KEY-driven motors if no keep-alive in 300ms
 
 //----speed calculation for sterpper motor----
 // Gear ratios
@@ -263,6 +267,24 @@ void initializeCamera() {
   camera_initialized = true;
 }
 
+// Stop all motor PWM outputs and clear motion-state flags.
+// Called before any long LANC macro so the camera is stationary during the sequence.
+// NOTE: up/down/left/right arrow flags are preserved because they drive the macro's
+//       repeat logic and are cleared by the UDP off-command after the macro finishes.
+void stopMotorsForMacro() {
+    pwm_set_chan_level(PAN_SLICE, PAN_CHAN, 0);
+    pwm_set_chan_level(TILT_SLICE, TILT_CHAN, 0);
+    pwm_set_chan_level(ROLL_SLICE, ROLL_CHAN, 0);
+    panStepperActive   = false;
+    tiltStepperActive  = false;
+    rollStepperActive  = false;
+    joystickPanActive  = false;
+    joystickTiltActive = false;
+    keyboardPanActive  = false;
+    keyboardTiltActive = false;
+    rollingActive      = false;
+}
+
 void powerOnCamera() {
   // Hold LANC TIP low for 200ms to wake camera from standby
   digitalWrite(cmdPin, HIGH);
@@ -271,6 +293,7 @@ void powerOnCamera() {
 }
 
 void startupSequence() {
+  stopMotorsForMacro(); // Halt all motion before the long init sequence
   camera_initialized = false;
   Serial.println("Startup: powering off camera...");
   lancCommand(POWER_OFF);
@@ -629,33 +652,24 @@ void handleInitStatus(WiFiClient client) {
   client.println("}");
 }
 
+// Shared stop-all logic: usable from HTTP handler, UDP handler, and init sequence.
+void stopAllState() {
+    stopMotorsForMacro();
+    left_arrow            = false;
+    right_arrow           = false;
+    up_arrow              = false;
+    down_arrow            = false;
+    keyboardZoomInActive  = false;
+    keyboardZoomOutActive = false;
+    Serial.println("All motors stopped and state reset.");
+}
+
 void handleStopAll(WiFiClient client) {
-  // Stop all motors and reset state
-  pwm_set_chan_level(PAN_SLICE, PAN_CHAN, 0);
-  pwm_set_chan_level(TILT_SLICE, TILT_CHAN, 0);
-  pwm_set_chan_level(ROLL_SLICE, ROLL_CHAN, 0);
-
-  left_arrow = false;
-  right_arrow = false;
-  up_arrow = false;
-  down_arrow = false;
-  
-  panStepperActive = false;
-  tiltStepperActive = false;
-  rollStepperActive = false;
-  joystickPanActive = false;
-  joystickTiltActive = false;
-  rollingActive = false;
-  keyboardTiltActive = false;
-  keyboardPanActive = false;
-  keyboardZoomInActive = false;
-  keyboardZoomOutActive = false;
-  Serial.println("All motors stopped and state reset.");
-
-  client.println("HTTP/1.1 200 OK");
-  client.println("Content-type:application/json");
-  client.println();
-  client.println("{\"status\":\"stopped\"}");
+    stopAllState();
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-type:application/json");
+    client.println();
+    client.println("{\"status\":\"stopped\"}");
 }
 
 void handleOTAUpload(WiFiClient& client, long contentLength) {
@@ -934,6 +948,8 @@ void reconnectWiFi() {
       mdnsUDP.stop();
       delay(100);
       mdnsUDP.beginMulticast(MDNS_MULTICAST, MDNS_PORT);
+      controlUDP.stop();
+      controlUDP.begin(CONTROL_PORT);
     } else {
       Serial.println("\nFailed to reconnect to WiFi.");
     }
@@ -972,6 +988,156 @@ void handleHostnameRequest(WiFiClient& client, String request) {
     delay(1000);
     mdns_hostname = newHost;
     return;
+}
+
+// ── UDP Control Handler ───────────────────────────────────────────────────────
+// Processes up to 10 pending UDP control packets per loop iteration.
+// Protocol (plain text, newline-terminated strings):
+//   DIR <up|down|left|right> <on|off>   – context-sensitive direction (zoom/focus/WB/pan)
+//   KEY <up|down|left|right> <on|off>   – keyboard pan/tilt (always stepper, keep-alive expected)
+//   KEY <zoomin|zoomout> <on|off>       – keyboard zoom (keep-alive expected)
+//   CMD <1-16>                          – select camera command mode
+//   ROLL <cw|ccw> <on|off>             – roll axis
+//   STOP                               – stop all motors and clear all state
+//   INIT                               – run camera startup sequence
+//   RESET                              – NVIC system reset
+//   STATUS                             – reply with current parameter values
+//   LANCRAW <b0hex> <b1hex> [repeat]   – send raw LANC command (e.g. LANCRAW 28 00 3)
+void handleUDPControl() {
+    char buf[80];
+    int packetSize;
+    int maxPackets = 10; // avoid starving the rest of the loop
+    while ((packetSize = controlUDP.parsePacket()) > 0 && maxPackets-- > 0) {
+        int len = controlUDP.read(buf, sizeof(buf) - 1);
+        if (len <= 0) continue;
+        buf[len] = '\0';
+        // Trim trailing whitespace / newlines
+        while (len > 0 && (buf[len-1] == '\n' || buf[len-1] == '\r' || buf[len-1] == ' '))
+            buf[--len] = '\0';
+
+        String cmd(buf);
+
+        // ── DIR: context-sensitive direction flags ────────────────────────────
+        if (cmd.startsWith("DIR ")) {
+            String rest = cmd.substring(4);
+            if      (rest == "up on")     { up_arrow = true;  down_arrow = false; }
+            else if (rest == "up off")    { up_arrow = false; }
+            else if (rest == "down on")   { down_arrow = true; up_arrow = false; }
+            else if (rest == "down off")  { down_arrow = false; }
+            else if (rest == "left on")   { left_arrow = true; right_arrow = false; }
+            else if (rest == "left off")  { left_arrow = false; }
+            else if (rest == "right on")  { right_arrow = true; left_arrow = false; }
+            else if (rest == "right off") { right_arrow = false; }
+
+        // ── KEY: keyboard pan/tilt/zoom (requires keep-alive from companion app) ──
+        } else if (cmd.startsWith("KEY ")) {
+            lastKeyboardCommandMs = millis(); // reset keep-alive watchdog
+            String rest = cmd.substring(4);
+            if (rest == "up on") {
+                float spd = (lastKeyboardPanTiltSpeed == PAN_TILT_FAST) ? TILT_DEFAULT_SPEED :
+                            (lastKeyboardPanTiltSpeed == PAN_TILT_SLOW) ? TILT_DEFAULT_SPEED / 25.0 :
+                                                                           TILT_DEFAULT_SPEED / 5.0;
+                runTiltStepper(spd, HIGH);
+                keyboardTiltActive = true;
+            } else if (rest == "up off") {
+                pwm_set_chan_level(TILT_SLICE, TILT_CHAN, 0);
+                tiltStepperActive = false; keyboardTiltActive = false;
+            } else if (rest == "down on") {
+                float spd = (lastKeyboardPanTiltSpeed == PAN_TILT_FAST) ? TILT_DEFAULT_SPEED :
+                            (lastKeyboardPanTiltSpeed == PAN_TILT_SLOW) ? TILT_DEFAULT_SPEED / 25.0 :
+                                                                           TILT_DEFAULT_SPEED / 5.0;
+                runTiltStepper(spd, LOW);
+                keyboardTiltActive = true;
+            } else if (rest == "down off") {
+                pwm_set_chan_level(TILT_SLICE, TILT_CHAN, 0);
+                tiltStepperActive = false; keyboardTiltActive = false;
+            } else if (rest == "left on") {
+                float spd = (lastKeyboardPanTiltSpeed == PAN_TILT_FAST) ? PAN_DEFAULT_SPEED :
+                            (lastKeyboardPanTiltSpeed == PAN_TILT_SLOW) ? PAN_DEFAULT_SPEED / 25.0 :
+                                                                           PAN_DEFAULT_SPEED / 5.0;
+                runPanStepper(spd, HIGH);
+                keyboardPanActive = true;
+            } else if (rest == "left off") {
+                pwm_set_chan_level(PAN_SLICE, PAN_CHAN, 0);
+                panStepperActive = false; keyboardPanActive = false;
+            } else if (rest == "right on") {
+                float spd = (lastKeyboardPanTiltSpeed == PAN_TILT_FAST) ? PAN_DEFAULT_SPEED :
+                            (lastKeyboardPanTiltSpeed == PAN_TILT_SLOW) ? PAN_DEFAULT_SPEED / 25.0 :
+                                                                           PAN_DEFAULT_SPEED / 5.0;
+                runPanStepper(spd, LOW);
+                keyboardPanActive = true;
+            } else if (rest == "right off") {
+                pwm_set_chan_level(PAN_SLICE, PAN_CHAN, 0);
+                panStepperActive = false; keyboardPanActive = false;
+            } else if (rest == "zoomin on") {
+                keyboardZoomInActive = true; keyboardZoomOutActive = false;
+                keyboardZoomLastOn = millis();
+            } else if (rest == "zoomin off") {
+                keyboardZoomInActive = false;
+            } else if (rest == "zoomout on") {
+                keyboardZoomOutActive = true; keyboardZoomInActive = false;
+                keyboardZoomLastOn = millis();
+            } else if (rest == "zoomout off") {
+                keyboardZoomOutActive = false;
+            }
+
+        // ── CMD: select camera command mode ──────────────────────────────────
+        } else if (cmd.startsWith("CMD ")) {
+            int val = cmd.substring(4).toInt();
+            camera_command = val;
+            if (val >= ZOOM_1 && val <= ZOOM_7)
+                lastZoomSpeed = val;
+            if (val == PAN_TILT_FAST || val == PAN_TILT_MEDIUM || val == PAN_TILT_SLOW)
+                lastKeyboardPanTiltSpeed = val;
+
+        // ── ROLL ─────────────────────────────────────────────────────────────
+        } else if (cmd.startsWith("ROLL ")) {
+            String rest = cmd.substring(5);
+            if      (rest == "cw on")   { runrollStepper(ROLL_DEFAULT_SPEED, true);  rollingActive = true; }
+            else if (rest == "cw off")  { pwm_set_chan_level(ROLL_SLICE, ROLL_CHAN, 0); rollStepperActive = false; rollingActive = false; }
+            else if (rest == "ccw on")  { runrollStepper(ROLL_DEFAULT_SPEED, false); rollingActive = true; }
+            else if (rest == "ccw off") { pwm_set_chan_level(ROLL_SLICE, ROLL_CHAN, 0); rollStepperActive = false; rollingActive = false; }
+
+        // ── STOP ─────────────────────────────────────────────────────────────
+        } else if (cmd == "STOP") {
+            stopAllState();
+
+        // ── INIT: run camera startup sequence ────────────────────────────────
+        } else if (cmd == "INIT") {
+            camera_initialized = false;
+            startupSequence();
+
+        // ── RESET: reboot the MCU ─────────────────────────────────────────────
+        } else if (cmd == "RESET") {
+            NVIC_SystemReset();
+
+        // ── STATUS: reply with current parameter values ───────────────────────
+        } else if (cmd == "STATUS") {
+            IPAddress remoteIP   = controlUDP.remoteIP();
+            uint16_t  remotePort = controlUDP.remotePort();
+            char reply[160];
+            snprintf(reply, sizeof(reply),
+                     "STATUS wb_k=%d exp_f=%d exp_s=%d exp_g=%d hostname=%s",
+                     wb_k, exp_f, exp_s, exp_g, mdns_hostname.c_str());
+            controlUDP.beginPacket(remoteIP, remotePort);
+            controlUDP.write((uint8_t*)reply, strlen(reply));
+            controlUDP.endPacket();
+
+        // ── LANCRAW: send a raw LANC command ──────────────────────────────────
+        } else if (cmd.startsWith("LANCRAW ")) {
+            uint8_t b0 = 0, b1 = 0;
+            int rep = 1;
+            sscanf(cmd.c_str() + 8, "%hhx %hhx %d", &b0, &b1, &rep);
+            if (rep < 1)  rep = 1;
+            if (rep > 20) rep = 20;
+            LancCommand lcmd = {b0, b1};
+            if (rep == 1) {
+                lancCommand(lcmd);
+            } else {
+                for (int i = 0; i < rep; i++) { lancCommand(lcmd); delay(100); }
+            }
+        }
+    }
 }
 
 void setup() {
@@ -1063,6 +1229,11 @@ void setup() {
   // Start the server
   server.begin();
 
+  // Start UDP control socket
+  controlUDP.begin(CONTROL_PORT);
+  Serial.print("UDP control listening on port ");
+  Serial.println(CONTROL_PORT);
+
   // Run startup sequence: power cycle camera and load settings from SD card
   startupSequence();
 }
@@ -1071,6 +1242,7 @@ void setup() {
 void loop() {
     reconnectWiFi(); // Check and reconnect to WiFi if disconnected
     pollMDNS(); // Poll for mDNS queries
+    handleUDPControl(); // Process incoming UDP control packets
     WiFiClient client = server.available();
     if (client) {
         String currentLine = "";
@@ -1176,6 +1348,14 @@ void loop() {
         }
         client.stop();
       }
+
+    /****** STOP MOTORS BEFORE ANY LANC MACRO ******/
+    // Ensure the camera is stationary before a multi-second WB/Exposure macro runs.
+    if ((up_arrow || down_arrow || left_arrow || right_arrow) &&
+        (camera_command == WB_K || camera_command == EXP_F ||
+         camera_command == EXP_S || camera_command == EXP_GAIN)) {
+        stopMotorsForMacro();
+    }
 
     /******POLL FOR THE ARROWS BEING PRESSED******/
     /*******  UP ARROW **********/
@@ -1337,6 +1517,22 @@ void loop() {
         joystickPanActive = false;
         joystickTiltActive = false;
         Serial.println("Joystick timeout - motors stopped");
+    }
+
+    // UDP keyboard command timeout – stop KEY-driven axes if the companion app
+    // has stopped sending keep-alive packets (e.g. key released, app lost focus,
+    // or network interrupted). Timeout must be > KEEPALIVE_MS in the Python app.
+    if ((keyboardPanActive || keyboardTiltActive ||
+         keyboardZoomInActive || keyboardZoomOutActive) &&
+        (millis() - lastKeyboardCommandMs > KEY_UDP_TIMEOUT_MS)) {
+        pwm_set_chan_level(PAN_SLICE, PAN_CHAN, 0);
+        pwm_set_chan_level(TILT_SLICE, TILT_CHAN, 0);
+        panStepperActive      = false;
+        tiltStepperActive     = false;
+        keyboardPanActive     = false;
+        keyboardTiltActive    = false;
+        keyboardZoomInActive  = false;
+        keyboardZoomOutActive = false;
     }
     
     if(!left_arrow && !right_arrow && !up_arrow && !down_arrow && !joystickPanActive && !joystickTiltActive && !keyboardPanActive && !keyboardTiltActive && !rollingActive) {

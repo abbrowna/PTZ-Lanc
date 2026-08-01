@@ -91,7 +91,8 @@ class CameraControlApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("PTZ Camera Control")
-        self.root.resizable(False, False)
+        self.root.resizable(True, True)
+        self.root.minsize(620, 540)
         self.root.configure(bg=C["bg"])
 
         # ── UDP socket (send + receive on the same socket) ────────────────────
@@ -181,19 +182,38 @@ class CameraControlApp:
             self._send("STATUS")
         self.root.after(STATUS_INTERVAL_MS, self._schedule_status_poll)
 
+    def _is_typing_focus(self) -> bool:
+        """Return True when keyboard focus is on a text-entry widget.
+        Used to suppress camera hotkeys while the user types in the connection bar.
+        """
+        return isinstance(self.root.focus_get(), tk.Entry)
+
     def _connect(self) -> None:
+        """Start a DNS lookup in a background thread so the UI stays responsive.
+        mDNS resolution for .local names on macOS can take 1-5 s and would
+        otherwise freeze the tkinter event loop entirely.
+        """
         host = self.ip_var.get().strip()
         if not host:
             return
+        self.conn_label.set("Resolving…")
+        threading.Thread(target=self._connect_worker, args=(host,), daemon=True).start()
+
+    def _connect_worker(self, host: str) -> None:
+        """Background thread: resolve hostname then post result to the main thread."""
         try:
             ip = socket.gethostbyname(host)
+            port = int(self.port_var.get())
+            self.root.after(0, lambda: self._connect_done(ip, port))
         except socket.gaierror as exc:
-            self.conn_label.set(f"DNS error: {exc}")
-            return
-        port = int(self.port_var.get())
+            self.root.after(0, lambda: self.conn_label.set(f"DNS error: {exc}"))
+
+    def _connect_done(self, ip: str, port: int) -> None:
+        """Called on the main thread once DNS resolves successfully."""
         self.target = (ip, port)
         self.conn_label.set(f"● {ip}:{port}")
         self._send("STATUS")
+        self.root.focus_set()  # move focus away from the host entry field
 
     def _disconnect(self) -> None:
         self._do_stop_all()
@@ -279,20 +299,30 @@ class CameraControlApp:
             self.root.bind(f"<KeyRelease-{sym}>",
                            lambda e, a=action, p=off_pkt: self._on_held_release(a, p))
 
-        # ── Instant keys: mode selectors ──────────────────────────────────────
+        # ── Instant keys: mode selectors ─────────────────────────────────────
+        # Guard with _is_typing_focus() so hotkeys don't fire while the user
+        # is typing in the host/port entry fields.
         for sym, cmd_id in HOTKEY_CMD.items():
             self.root.bind(f"<KeyPress-{sym}>",
-                           lambda e, c=cmd_id: self._select_cmd(c))
+                           lambda e, c=cmd_id: (
+                               None if self._is_typing_focus() else self._select_cmd(c)
+                           ))
 
-        # ── Safety: stop everything when the window loses focus ───────────────
-        self.root.bind("<FocusOut>", lambda e: self._do_stop_all())
+        # ── Safety: stop when the application window is deactivated ──────────
+        # <Deactivate> fires only when the OS moves focus to a different app,
+        # unlike <FocusOut> which fires on every intra-app widget focus change
+        # and would incorrectly send STOP every time the user clicks a button.
+        self.root.bind("<Deactivate>", lambda e: self._do_stop_all())
 
     def _on_held_press(self, action: str, packet: str) -> None:
         """
         Handle key press for a held action.
         Cancels any pending release timer first to absorb keyboard auto-repeat
         (which generates a rapid KeyRelease → KeyPress pair).
+        Ignored when a text-entry widget has focus (user is typing a hostname).
         """
+        if self._is_typing_focus():
+            return
         pending = self.release_timers.pop(action, None)
         if pending:
             self.root.after_cancel(pending)

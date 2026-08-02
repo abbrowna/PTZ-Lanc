@@ -44,7 +44,7 @@ async function connectToCamera() {
     const statusEl = document.getElementById('conn-status');
     statusEl.textContent = 'Resolving…';
     try {
-        const addr = await invoke('connect', { host, port });
+        const addr = await invoke('camera_connect', { host, port });
         statusEl.textContent = '● ' + addr;
         document.getElementById('conn-bar').classList.add('connected');
         // Request initial status immediately
@@ -56,7 +56,7 @@ async function connectToCamera() {
 
 async function disconnectFromCamera() {
     stopAll();
-    await invoke('disconnect').catch(() => {});
+    await invoke('camera_disconnect').catch(() => {});
     document.getElementById('conn-status').textContent = 'Disconnected';
     document.getElementById('conn-bar').classList.remove('connected');
 }

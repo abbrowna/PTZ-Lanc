@@ -57,6 +57,15 @@
             "presentation": { "panel": "shared", "reveal": "always" },
             "problemMatcher": []
         },
+        {
+            "label": "Tauri: Sync style.css from src/",
+            "type": "shell",
+            "command": "cp src/style.css companion_app/tauri-app/ui/style.css",
+            "options": { "cwd": "${workspaceFolder}" },
+            "group": "build",
+            "presentation": { "panel": "shared", "reveal": "silent" },
+            "problemMatcher": []
+        },
         // ── Tauri companion app ──────────────────────────────────────────────
         {
             "label": "Tauri: Dev (hot-reload)",

@@ -1,0 +1,67 @@
+/*
+ * conn-bar.css  –  Tauri companion-app additions on top of style.css
+ *
+ * style.css is symlinked from src/style.css and loaded first.
+ * This file adds only the connection-bar and the layout adjustments
+ * needed because the bar takes 38 px at the top of the window.
+ */
+
+/* ── Connection bar ──────────────────────────────────────────────────────── */
+#conn-bar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 38px;
+    background: rgba(240, 248, 255, 0.96);   /* matches body background-color */
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    border-bottom: 1px solid #c4d0e8;
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 12px;
+    font-family: "Poppins", sans-serif;
+    font-size: 12px;
+    color: #6e7fa8;
+}
+
+#conn-bar input[type="text"],
+#conn-bar input[type="number"] {
+    height: 24px;
+    border: 1px solid #c4d0e8;
+    border-radius: 4px;
+    background: #fff;
+    color: #3d4c6e;
+    font-size: 12px;
+    padding: 0 6px;
+    outline: none;
+}
+#conn-bar input[type="text"] { width: 160px; }
+
+.conn-label { white-space: nowrap; }
+
+.conn-btn {
+    height: 26px;
+    border: none;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 0 12px;
+    transition: opacity 0.15s;
+}
+.conn-btn:hover             { opacity: 0.85; }
+.conn-btn--connect          { background: #8fa8d9; color: #fff; }
+.conn-btn--disconnect       { background: #c97070; color: #fff; padding: 0 8px; }
+
+#conn-status {
+    margin-left: auto;
+    font-size: 11px;
+    color: #8fa8d9;
+    white-space: nowrap;
+}
+
+/* ── Shift absolute-positioned screen sections below the bar ─────────────── */
+.top-left  { top: calc(1rem + 38px) !important; }
+.top-right { top: calc(1rem + 38px) !important; }

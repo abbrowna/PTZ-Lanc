@@ -1,0 +1,8 @@
+{
+  "identifier": "default",
+  "description": "Default capabilities – allows invoke() and event.listen() from the frontend.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default"
+  ]
+}

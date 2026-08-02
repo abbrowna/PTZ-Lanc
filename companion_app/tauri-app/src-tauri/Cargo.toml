@@ -1,0 +1,19 @@
+[package]
+name    = "ptz-camera-control"
+version = "1.0.0"
+edition = "2021"
+
+[lib]
+name         = "ptz_camera_control_lib"
+crate-type   = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri   = { version = "2", features = [] }
+serde   = { version = "1", features = ["derive"] }
+
+[profile.release]
+lto     = true
+opt-level = "s"   # optimise for binary size, not max speed

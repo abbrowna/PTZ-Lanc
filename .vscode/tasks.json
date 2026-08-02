@@ -1,0 +1,98 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        // ── Firmware (PlatformIO) ────────────────────────────────────────────
+        {
+            "label": "Firmware: Build",
+            "type": "shell",
+            "command": "${userHome}/.platformio/penv/bin/platformio run",
+            "options": { "cwd": "${workspaceFolder}" },
+            "group": { "kind": "build", "isDefault": false },
+            "presentation": { "panel": "dedicated", "reveal": "always", "clear": true },
+            "problemMatcher": []
+        },
+        {
+            "label": "Firmware: Clean",
+            "type": "shell",
+            "command": "${userHome}/.platformio/penv/bin/platformio run --target clean",
+            "options": { "cwd": "${workspaceFolder}" },
+            "group": "build",
+            "presentation": { "panel": "dedicated", "reveal": "always", "clear": true },
+            "problemMatcher": []
+        },
+        {
+            "label": "Firmware: Upload (USB)",
+            "type": "shell",
+            "command": "${userHome}/.platformio/penv/bin/platformio run --target upload",
+            "options": { "cwd": "${workspaceFolder}" },
+            "group": "build",
+            "presentation": { "panel": "dedicated", "reveal": "always", "clear": true },
+            "problemMatcher": []
+        },
+        // ── Web UI assets (upload static files to device over HTTP) ─────────
+        {
+            "label": "WebUI: Upload HTML to camera",
+            "type": "shell",
+            "command": "curl -X POST http://${input:cameraHost}/upload_html --data-binary @src/index.html -H 'Content-Type: application/octet-stream'",
+            "options": { "cwd": "${workspaceFolder}" },
+            "group": "build",
+            "presentation": { "panel": "shared", "reveal": "always" },
+            "problemMatcher": []
+        },
+        {
+            "label": "WebUI: Upload JS to camera",
+            "type": "shell",
+            "command": "curl -X POST http://${input:cameraHost}/upload_js --data-binary @src/index.js -H 'Content-Type: application/octet-stream'",
+            "options": { "cwd": "${workspaceFolder}" },
+            "group": "build",
+            "presentation": { "panel": "shared", "reveal": "always" },
+            "problemMatcher": []
+        },
+        {
+            "label": "WebUI: Upload CSS to camera",
+            "type": "shell",
+            "command": "curl -X POST http://${input:cameraHost}/upload_css --data-binary @src/newstyle.css -H 'Content-Type: application/octet-stream'",
+            "options": { "cwd": "${workspaceFolder}" },
+            "group": "build",
+            "presentation": { "panel": "shared", "reveal": "always" },
+            "problemMatcher": []
+        },
+        // ── Tauri companion app ──────────────────────────────────────────────
+        {
+            "label": "Tauri: Dev (hot-reload)",
+            "type": "shell",
+            "command": "npm run dev",
+            "options": { "cwd": "${workspaceFolder}/companion_app/tauri-app" },
+            "group": "build",
+            "isBackground": true,
+            "presentation": { "panel": "dedicated", "reveal": "always", "clear": true },
+            "problemMatcher": []
+        },
+        {
+            "label": "Tauri: Build (release)",
+            "type": "shell",
+            "command": "npm run build",
+            "options": { "cwd": "${workspaceFolder}/companion_app/tauri-app" },
+            "group": "build",
+            "presentation": { "panel": "dedicated", "reveal": "always", "clear": true },
+            "problemMatcher": []
+        },
+        {
+            "label": "Tauri: Install deps",
+            "type": "shell",
+            "command": "npm install",
+            "options": { "cwd": "${workspaceFolder}/companion_app/tauri-app" },
+            "group": "build",
+            "presentation": { "panel": "shared", "reveal": "always" },
+            "problemMatcher": []
+        }
+    ],
+    "inputs": [
+        {
+            "id": "cameraHost",
+            "description": "Camera hostname or IP (e.g. camera-left.local)",
+            "default": "camera.local",
+            "type": "promptString"
+        }
+    ]
+}

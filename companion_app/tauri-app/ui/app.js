@@ -377,8 +377,10 @@ document.addEventListener('DOMContentLoaded', () => {
     setupRollButton('btn-roll-ccw', 'ccw');
     setupRollButton('btn-roll-cw',  'cw');
 
-    // Global mouseup failsafe (belt-and-suspenders stop)
-    document.addEventListener('mouseup', () => setTimeout(stopAll, 100));
+    // NOTE: the global mouseup→stopAll that was in the original index.js is
+    // intentionally omitted here.  Sending STOP on every mouse click interrupts
+    // any movement the user starts with the keyboard while interacting with the
+    // UI.  The firmware's KEY_UDP_TIMEOUT_MS watchdog is the correct safety net.
 
     // Stop-all button
     document.getElementById('stop-all-btn')?.addEventListener('click', stopAll);

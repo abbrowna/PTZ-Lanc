@@ -96,6 +96,7 @@ unsigned long keyboardZoomLastOn = 0;
 int lastKeyboardPanTiltSpeed = 14; // Last pan/tilt speed selected (13=fast, 14=medium, 15=slow)
 unsigned long lastKeyboardCommandMs = 0;      // UDP keep-alive timestamp for KEY commands
 const unsigned long KEY_UDP_TIMEOUT_MS = 300; // Stop KEY-driven motors if no keep-alive in 300ms
+bool keyboardViaHTTP = false; // true when last KEY on-command came from HTTP (no keep-alive expected)
 
 //----speed calculation for sterpper motor----
 // Gear ratios
@@ -563,6 +564,9 @@ unsigned long keyboardLastOn = 0;
 const unsigned long keyboardTimeout = 1300; // ms
 
 void handleKeypress(WiFiClient client, String request) {
+    // Mark keyboard as HTTP-driven: the timeout watchdog must be bypassed because
+    // the web UI sends one on/off pair with no keep-alive in between.
+    keyboardViaHTTP = true;
     if (request.indexOf("/keyboard/up/on") >= 0) {
         float tiltSpd = (lastKeyboardPanTiltSpeed == PAN_TILT_FAST)  ? TILT_DEFAULT_SPEED :
                         (lastKeyboardPanTiltSpeed == PAN_TILT_SLOW)  ? TILT_DEFAULT_SPEED / 25 :
@@ -1031,6 +1035,7 @@ void handleUDPControl() {
 
         // ── KEY: keyboard pan/tilt/zoom (requires keep-alive from companion app) ──
         } else if (cmd.startsWith("KEY ")) {
+            keyboardViaHTTP = false;          // clear HTTP flag: this is a UDP command
             lastKeyboardCommandMs = millis(); // reset keep-alive watchdog
             String rest = cmd.substring(4);
             if (rest == "up on") {
@@ -1522,7 +1527,10 @@ void loop() {
     // UDP keyboard command timeout – stop KEY-driven axes if the companion app
     // has stopped sending keep-alive packets (e.g. key released, app lost focus,
     // or network interrupted). Timeout must be > KEEPALIVE_MS in the Python app.
-    if ((keyboardPanActive || keyboardTiltActive ||
+    // Bypassed when keyboardViaHTTP is true: the HTTP web UI sends one on/off
+    // pair with no keep-alive, so it must never be subject to this timeout.
+    if (!keyboardViaHTTP &&
+        (keyboardPanActive || keyboardTiltActive ||
          keyboardZoomInActive || keyboardZoomOutActive) &&
         (millis() - lastKeyboardCommandMs > KEY_UDP_TIMEOUT_MS)) {
         pwm_set_chan_level(PAN_SLICE, PAN_CHAN, 0);

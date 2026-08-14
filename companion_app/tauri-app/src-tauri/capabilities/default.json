@@ -1,8 +1,9 @@
 {
   "identifier": "default",
-  "description": "Default capabilities – allows invoke() and event.listen() from the frontend.",
-  "windows": ["main"],
+  "description": "Default capabilities – allows invoke(), event.listen(), and opening new camera windows.",
+  "windows": ["main", "camera-*"],
   "permissions": [
-    "core:default"
+    "core:default",
+    "core:window:allow-create"
   ]
 }

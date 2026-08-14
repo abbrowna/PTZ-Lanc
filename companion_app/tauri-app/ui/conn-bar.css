@@ -54,6 +54,7 @@
 .conn-btn:hover             { opacity: 0.85; }
 .conn-btn--connect          { background: #8fa8d9; color: #fff; }
 .conn-btn--disconnect       { background: #c97070; color: #fff; padding: 0 8px; }
+.conn-btn--new              { background: #70a080; color: #fff; }
 
 #conn-status {
     margin-left: auto;

@@ -61,6 +61,15 @@ async function disconnectFromCamera() {
     document.getElementById('conn-bar').classList.remove('connected');
 }
 
+/** Open an independent new window for a second (or third…) camera. */
+async function openNewCameraWindow() {
+    try {
+        await invoke('open_camera_window');
+    } catch (e) {
+        console.error('Could not open new camera window:', e);
+    }
+}
+
 // ── Status event listener (pushed from Rust, replaces polling) ────────────────
 
 listen('status-update', (event) => {
@@ -335,6 +344,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Connection bar
     document.getElementById('conn-connect').addEventListener('click',    connectToCamera);
     document.getElementById('conn-disconnect').addEventListener('click', disconnectFromCamera);
+    document.getElementById('conn-new-window').addEventListener('click', openNewCameraWindow);
     document.getElementById('conn-host').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') connectToCamera();
     });

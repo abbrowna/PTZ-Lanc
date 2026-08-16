@@ -110,7 +110,10 @@ function convertExpS(index) {
 
 // ── Camera control functions (1-to-1 replacements for the original fetch calls)
 
-function stopAll()                          { udpSend('STOP'); }
+function stopAll() {
+    stopAllKeyActions();   // cancel JS-side keep-alive intervals + send off-commands
+    udpSend('STOP');       // tell firmware to stop all motion immediately
+}
 function sendDirectionCommand(dir, on)      { udpSend(`DIR ${dir} ${on ? 'on' : 'off'}`); }
 function sendCameraCommand(cmd)             { udpSend(`CMD ${cmd}`); }
 function sendKeyboardDirection(dir, on)     { udpSend(`KEY ${dir} ${on ? 'on' : 'off'}`); }
@@ -121,45 +124,66 @@ function stopArrow(direction)               { udpSendReliable(`DIR ${direction} 
 function startRoll(direction)               { udpSend(`ROLL ${direction} on`); }
 function stopRoll(direction)                { udpSendReliable(`ROLL ${direction} off`); }
 
-// ── Key state (tracks which keys are held to suppress auto-repeat) ────────────
+// ── KEY keep-alive: holds keys send the on-packet every 100 ms ──────────────
+//
+// The firmware's KEY_UDP_TIMEOUT_MS watchdog (300 ms) requires a refresh at
+// least once every 300 ms.  Sending every 100 ms means three consecutive
+// lost packets are needed before the motor stops, which is robust over a
+// loaded Wi-Fi network and matches the Python companion app's behaviour.
+//
+// Without this, pressing a key sends one packet and the motor stops after
+// ~300 ms (the watchdog fires) even though the key is still held.
 
-let keyState = {};
+const KEY_KEEPALIVE_MS = 100;   // must be < firmware KEY_UDP_TIMEOUT_MS (300)
+
+// Map: KeyboardEvent.code → UDP on/off packet strings
+const HELD_KEYS = {
+    'ArrowUp':    { on: 'KEY up on',      off: 'KEY up off'      },
+    'ArrowDown':  { on: 'KEY down on',    off: 'KEY down off'    },
+    'ArrowLeft':  { on: 'KEY left on',    off: 'KEY left off'    },
+    'ArrowRight': { on: 'KEY right on',   off: 'KEY right off'   },
+    'KeyZ':       { on: 'KEY zoomin on',  off: 'KEY zoomin off'  },
+    'KeyX':       { on: 'KEY zoomout on', off: 'KEY zoomout off' },
+};
+
+const keyHeld      = {};   // code → bool (also acts as auto-repeat guard)
+const keyIntervals = {};   // code → setInterval id
+
+function startKeyAction(code) {
+    if (keyHeld[code]) return;              // auto-repeat: already active
+    const spec = HELD_KEYS[code];
+    if (!spec) return;
+    keyHeld[code] = true;
+    udpSend(spec.on);                       // send immediately on press
+    keyIntervals[code] = setInterval(() => udpSend(spec.on), KEY_KEEPALIVE_MS);
+}
+
+function stopKeyAction(code) {
+    if (!keyHeld[code]) return;
+    keyHeld[code] = false;
+    clearInterval(keyIntervals[code]);
+    delete keyIntervals[code];
+    const spec = HELD_KEYS[code];
+    if (spec) udpSendReliable(spec.off);    // reliable triple-send on release
+}
+
+function stopAllKeyActions() {
+    for (const code of Object.keys(keyHeld)) {
+        stopKeyAction(code);
+    }
+}
 
 document.addEventListener('keydown', (event) => {
-    switch (event.code) {
-        case 'ArrowUp': case 'ArrowDown': case 'ArrowLeft': case 'ArrowRight':
-            if (!keyState[event.code]) {
-                keyState[event.code] = true;
-                sendKeyboardDirection(event.code.replace('Arrow', '').toLowerCase(), true);
-            }
-            break;
-        case 'KeyZ':
-            if (!keyState[event.code]) { keyState[event.code] = true; sendKeyboardZoom('zoomin',  true); }
-            break;
-        case 'KeyX':
-            if (!keyState[event.code]) { keyState[event.code] = true; sendKeyboardZoom('zoomout', true); }
-            break;
+    if (HELD_KEYS[event.code]) {
+        event.preventDefault();
+        startKeyAction(event.code);
     }
 });
 
 document.addEventListener('keyup', (event) => {
-    switch (event.code) {
-        case 'ArrowUp': case 'ArrowDown': case 'ArrowLeft': case 'ArrowRight':
-            event.preventDefault();
-            if (keyState[event.code]) {
-                keyState[event.code] = false;
-                const dir = event.code.replace('Arrow', '').toLowerCase();
-                udpSendReliable(`KEY ${dir} off`);
-            }
-            break;
-        case 'KeyZ':
-            event.preventDefault();
-            if (keyState[event.code]) { keyState[event.code] = false; udpSendReliable('KEY zoomin off'); }
-            break;
-        case 'KeyX':
-            event.preventDefault();
-            if (keyState[event.code]) { keyState[event.code] = false; udpSendReliable('KEY zoomout off'); }
-            break;
+    if (HELD_KEYS[event.code]) {
+        event.preventDefault();
+        stopKeyAction(event.code);
     }
 });
 

@@ -23,7 +23,7 @@ use std::{
     },
 };
 
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 
 // ── Shared status payload emitted to the frontend ────────────────────────────
 
@@ -66,10 +66,12 @@ fn recv_loop(
             Ok((len, _src)) => {
                 if let Ok(msg) = std::str::from_utf8(&buf[..len]) {
                     if let Some(update) = parse_status(msg.trim()) {
-                        // Emit only to the window that owns this connection
-                        if let Some(win) = app.get_webview_window(&label) {
-                            win.emit("status-update", update).ok();
-                        }
+                        // Emit only to the window that owns this connection.
+                        // NOTE: WebviewWindow::emit() is NOT window-scoped — it is
+                        // equivalent to a global AppHandle::emit() and is delivered
+                        // to every listener in every window. emit_to() is required
+                        // to target a single window by label.
+                        app.emit_to(label.as_str(), "status-update", update).ok();
                     }
                 }
             }

@@ -13,14 +13,19 @@
  *   invoke('udp_send',        { msg })          → fire-and-forget control packet
  *   invoke('udp_send_multi',  { msgs })         → send N packets (reliable off cmds)
  *   invoke('disconnect')                        → close socket
- *   listen('status-update',  handler)           → pushed status from camera
+ *   getCurrentWebviewWindow().listen('status-update', handler) → pushed status from camera (window-scoped)
  */
 
 'use strict';
 
 // ── Tauri API (injected by Tauri because withGlobalTauri:true in tauri.conf.json)
 const { invoke } = window.__TAURI__.core;
-const { listen  } = window.__TAURI__.event;
+// Use the per-window listener (paired with Rust's emit_to()) instead of the
+// global listen() from window.__TAURI__.event — global listen() receives
+// every window's events, which caused status from all cameras to appear in
+// every open window.
+const { getCurrentWebviewWindow } = window.__TAURI__.webviewWindow;
+const appWindow = getCurrentWebviewWindow();
 
 // ── Low-level UDP helpers ─────────────────────────────────────────────────────
 
@@ -72,7 +77,7 @@ async function openNewCameraWindow() {
 
 // ── Status event listener (pushed from Rust, replaces polling) ────────────────
 
-listen('status-update', (event) => {
+appWindow.listen('status-update', (event) => {
     const d = event.payload;
     if (d.wb_k  != null) document.getElementById('wb_k' ).innerText = convertToKelvin(d.wb_k)  + 'K';
     if (d.exp_f != null) document.getElementById('exp_f').innerText = convertExpF(d.exp_f);

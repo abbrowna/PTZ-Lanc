@@ -215,8 +215,11 @@ mod cmd {
     /// Open a new WebviewWindow pointing at the same UI.
     /// The new window gets a unique label (camera-<timestamp>) so it has
     /// its own independent connection slot in the ConnMap.
+    /// Must be `async`: building a WebviewWindow from a synchronous command
+    /// deadlocks WebView2 on Windows (blank, unclosable window) — see
+    /// https://github.com/tauri-apps/wry/issues/583.
     #[tauri::command]
-    pub fn open_camera_window(app: AppHandle) -> Result<(), String> {
+    pub async fn open_camera_window(app: AppHandle) -> Result<(), String> {
         use tauri::WebviewWindowBuilder;
         let label = format!("camera-{}", std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

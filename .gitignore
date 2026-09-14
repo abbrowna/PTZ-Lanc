@@ -3,3 +3,6 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+companion_app/tauri-app/src-tauri/Cargo.toml
+.gitignore
+companion_app/tauri-app/build.log

@@ -94,7 +94,13 @@ bool keyboardZoomOutActive = false;
 int lastZoomSpeed = 1;        // Last zoom speed (1-7) used by Z/X keyboard zoom
 unsigned long keyboardZoomLastOn = 0;
 int lastKeyboardPanTiltSpeed = 14; // Last pan/tilt speed selected (13=fast, 14=medium, 15=slow)
-unsigned long lastKeyboardCommandMs = 0;      // UDP keep-alive timestamp for KEY commands
+// Per-axis UDP keep-alive timestamps for KEY commands. These must be tracked
+// independently (rather than one shared timestamp) so that holding one axis
+// (e.g. tilt) doesn't keep resetting the watchdog for another axis (e.g. pan)
+// whose off-command was lost or reordered by UDP - otherwise a stuck pan/tilt
+// axis would never auto-recover until every held key is released.
+unsigned long lastKeyboardPanMs = 0;
+unsigned long lastKeyboardTiltMs = 0;
 const unsigned long KEY_UDP_TIMEOUT_MS = 300; // Stop KEY-driven motors if no keep-alive in 300ms
 bool keyboardViaHTTP = false; // true when last KEY on-command came from HTTP (no keep-alive expected)
 
@@ -1036,7 +1042,6 @@ void handleUDPControl() {
         // ── KEY: keyboard pan/tilt/zoom (requires keep-alive from companion app) ──
         } else if (cmd.startsWith("KEY ")) {
             keyboardViaHTTP = false;          // clear HTTP flag: this is a UDP command
-            lastKeyboardCommandMs = millis(); // reset keep-alive watchdog
             String rest = cmd.substring(4);
             if (rest == "up on") {
                 float spd = (lastKeyboardPanTiltSpeed == PAN_TILT_FAST) ? TILT_DEFAULT_SPEED :
@@ -1044,6 +1049,7 @@ void handleUDPControl() {
                                                                            TILT_DEFAULT_SPEED / 5.0;
                 runTiltStepper(spd, HIGH);
                 keyboardTiltActive = true;
+                lastKeyboardTiltMs = millis(); // reset tilt keep-alive watchdog
             } else if (rest == "up off") {
                 pwm_set_chan_level(TILT_SLICE, TILT_CHAN, 0);
                 tiltStepperActive = false; keyboardTiltActive = false;
@@ -1053,6 +1059,7 @@ void handleUDPControl() {
                                                                            TILT_DEFAULT_SPEED / 5.0;
                 runTiltStepper(spd, LOW);
                 keyboardTiltActive = true;
+                lastKeyboardTiltMs = millis(); // reset tilt keep-alive watchdog
             } else if (rest == "down off") {
                 pwm_set_chan_level(TILT_SLICE, TILT_CHAN, 0);
                 tiltStepperActive = false; keyboardTiltActive = false;
@@ -1062,6 +1069,7 @@ void handleUDPControl() {
                                                                            PAN_DEFAULT_SPEED / 5.0;
                 runPanStepper(spd, HIGH);
                 keyboardPanActive = true;
+                lastKeyboardPanMs = millis(); // reset pan keep-alive watchdog
             } else if (rest == "left off") {
                 pwm_set_chan_level(PAN_SLICE, PAN_CHAN, 0);
                 panStepperActive = false; keyboardPanActive = false;
@@ -1071,6 +1079,7 @@ void handleUDPControl() {
                                                                            PAN_DEFAULT_SPEED / 5.0;
                 runPanStepper(spd, LOW);
                 keyboardPanActive = true;
+                lastKeyboardPanMs = millis(); // reset pan keep-alive watchdog
             } else if (rest == "right off") {
                 pwm_set_chan_level(PAN_SLICE, PAN_CHAN, 0);
                 panStepperActive = false; keyboardPanActive = false;
@@ -1529,16 +1538,27 @@ void loop() {
     // or network interrupted). Timeout must be > KEEPALIVE_MS in the Python app.
     // Bypassed when keyboardViaHTTP is true: the HTTP web UI sends one on/off
     // pair with no keep-alive, so it must never be subject to this timeout.
-    if (!keyboardViaHTTP &&
-        (keyboardPanActive || keyboardTiltActive ||
-         keyboardZoomInActive || keyboardZoomOutActive) &&
-        (millis() - lastKeyboardCommandMs > KEY_UDP_TIMEOUT_MS)) {
+    //
+    // Each axis is watched independently (rather than against one shared
+    // timestamp) so that holding e.g. the tilt key can't mask a stuck/lost
+    // pan off-command - previously a continuously-refreshed shared timestamp
+    // meant pan (or tilt) could keep moving indefinitely as long as ANY
+    // keyboard axis was still being held, only self-correcting once every
+    // key was released.
+    if (!keyboardViaHTTP && keyboardPanActive &&
+        (millis() - lastKeyboardPanMs > KEY_UDP_TIMEOUT_MS)) {
         pwm_set_chan_level(PAN_SLICE, PAN_CHAN, 0);
+        panStepperActive  = false;
+        keyboardPanActive = false;
+    }
+    if (!keyboardViaHTTP && keyboardTiltActive &&
+        (millis() - lastKeyboardTiltMs > KEY_UDP_TIMEOUT_MS)) {
         pwm_set_chan_level(TILT_SLICE, TILT_CHAN, 0);
-        panStepperActive      = false;
-        tiltStepperActive     = false;
-        keyboardPanActive     = false;
-        keyboardTiltActive    = false;
+        tiltStepperActive  = false;
+        keyboardTiltActive = false;
+    }
+    if (!keyboardViaHTTP && (keyboardZoomInActive || keyboardZoomOutActive) &&
+        (millis() - keyboardZoomLastOn > KEY_UDP_TIMEOUT_MS)) {
         keyboardZoomInActive  = false;
         keyboardZoomOutActive = false;
     }

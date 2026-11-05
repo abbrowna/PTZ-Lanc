@@ -116,11 +116,13 @@ mod cmd {
     use tauri::{AppHandle, State, WebviewWindow};
     use super::{ConnMap, Conn, recv_loop};
 
+    // All commands are `async` so Tauri runs them off the main (UI) thread;
+    // sync commands execute on the main thread and can freeze the whole app.
     /// Open a UDP socket to `host:port` and start the receive thread.
     /// The window's label is used as the key in the connection map so each
     /// window has a completely independent connection.
     #[tauri::command]
-    pub fn camera_connect(
+    pub async fn camera_connect(
         host:   String,
         port:   u16,
         state:  State<'_, ConnMap>,
@@ -129,11 +131,20 @@ mod cmd {
     ) -> Result<String, String> {
         let label    = window.label().to_string();
         let addr_str = format!("{}:{}", host, port);
-        let target   = addr_str
-            .to_socket_addrs()
-            .map_err(|e| format!("DNS error: {e}"))?
-            .next()
-            .ok_or_else(|| format!("No address resolved for '{}'", host))?;
+        // DNS / mDNS lookups can block for seconds; keep them off the async workers.
+        let addrs = tauri::async_runtime::spawn_blocking(move || {
+            addr_str.to_socket_addrs().map(|a| a.collect::<Vec<_>>())
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("DNS error: {e}"))?;
+        // The send socket is bound to 0.0.0.0 (IPv4), so an IPv6 result (macOS
+        // often lists AAAA first) would make every send_to fail silently.
+        let target = addrs
+            .iter()
+            .find(|a| a.is_ipv4())
+            .copied()
+            .ok_or_else(|| format!("No IPv4 address resolved for '{}'", host))?;
 
         let send_sock = std::net::UdpSocket::bind("0.0.0.0:0")
             .map_err(|e| e.to_string())?;
@@ -165,7 +176,7 @@ mod cmd {
     }
 
     #[tauri::command]
-    pub fn udp_send(
+    pub async fn udp_send(
         msg:    String,
         state:  State<'_, ConnMap>,
         window: WebviewWindow,
@@ -182,7 +193,7 @@ mod cmd {
     }
 
     #[tauri::command]
-    pub fn udp_send_multi(
+    pub async fn udp_send_multi(
         msgs:   Vec<String>,
         state:  State<'_, ConnMap>,
         window: WebviewWindow,
@@ -201,15 +212,16 @@ mod cmd {
     }
 
     #[tauri::command]
-    pub fn camera_disconnect(
+    pub async fn camera_disconnect(
         state:  State<'_, ConnMap>,
         window: WebviewWindow,
-    ) {
+    ) -> Result<(), String> {
         let mut map = state.lock().unwrap();
         if let Some(conn) = map.get(window.label()) {
             conn.stop.store(true, Ordering::Relaxed);
         }
         map.remove(window.label());
+        Ok(())
     }
 
     /// Open a new WebviewWindow pointing at the same UI.

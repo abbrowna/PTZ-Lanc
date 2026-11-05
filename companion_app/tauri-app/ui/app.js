@@ -31,14 +31,20 @@ const appWindow = getCurrentWebviewWindow();
 
 async function udpSend(msg) {
     try { await invoke('udp_send', { msg }); }
-    catch (e) { /* not connected yet – silently ignore */ }
+    catch (e) { reportSendError(e); }
 }
 
 /** Send the same packet N times for reliable "key up" delivery. */
 async function udpSendReliable(msg, times = 3) {
     const msgs = Array(times).fill(msg);
     try { await invoke('udp_send_multi', { msgs }); }
-    catch (e) { /* not connected */ }
+    catch (e) { reportSendError(e); }
+}
+
+/** Show send failures in the connection bar instead of hiding them. */
+function reportSendError(e) {
+    const el = document.getElementById('conn-status');
+    if (el && String(e) !== 'Not connected to camera') el.textContent = 'Send error: ' + e;
 }
 
 // ── Connection management ─────────────────────────────────────────────────────

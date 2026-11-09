@@ -175,9 +175,13 @@ uint ROLL_CHAN;
 #define TMC_R_SENSE       0.11f      // Sense resistor in ohms (0.11 on most TMC2209 boards)
 
 // UART slave address of each driver (set by the MS1/MS2 pins, see above)
-#define PAN_TMC_ADDR      0
-#define TILT_TMC_ADDR     1
-#define ROLL_TMC_ADDR     2
+// Address = MS1 + 2*MS2 (1 when tied to 3.3V, 0 when tied to GND):
+//   pan:  MS1=3.3V, MS2=3.3V -> 3
+//   roll: MS1=3.3V, MS2=GND  -> 1
+//   tilt: MS1=GND,  MS2=GND  -> 0
+#define PAN_TMC_ADDR      3
+#define TILT_TMC_ADDR     0
+#define ROLL_TMC_ADDR     1
 
 // Motor RMS currents in mA while moving. Tune to your motors (stay under the
 // motor's rated current and keep the driver cool).

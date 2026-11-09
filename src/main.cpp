@@ -11,6 +11,7 @@
 #include "persistentStorage.h"
 #include "hardware/pwm.h"
 #include <WiFiUdp.h>
+#include <TMCStepper.h>   // TMC2209 UART configuration (see TMC2209 section below)
 
 /* Declare state variables*/
 int camera_command;
@@ -135,6 +136,178 @@ uint PAN_CHAN;
 uint TILT_CHAN;
 uint ROLL_CHAN;
 
+/* ============================================================================
+ *  TMC2209 UART CONFIGURATION  (StealthChop when holding, SpreadCycle when moving)
+ * ============================================================================
+ *  How the UART link works
+ *  -----------------------
+ *  The TMC2209 has a single-wire UART on its PDN_UART pin. Wire it like this:
+ *
+ *     Nano RP2040 TX (D1) --[1k resistor]--+
+ *                                          +-- PDN_UART of ALL three drivers
+ *     Nano RP2040 RX (D0) -----------------+
+ *
+ *  Because the line is shared (half duplex) every TX byte is also echoed back
+ *  on RX; the TMCStepper library takes care of discarding the echo.
+ *  Several drivers share the one bus, each one answering to a 2-bit slave
+ *  address that is set with its MS1/MS2 pins (once UART is used these pins no
+ *  longer choose the microstep resolution - we do that in software):
+ *       address 0: MS1=GND, MS2=GND     address 1: MS1=VIO, MS2=GND
+ *       address 2: MS1=GND, MS2=VIO     address 3: MS1=VIO, MS2=VIO
+ *  STEP/DIR/EN stay wired exactly as before - UART only changes driver
+ *  *settings*; the step pulses still come from the RP2040 PWM slices.
+ *  Remove the "PDN_UART" jumper/pad link to GND on boards that have one (e.g.
+ *  SilentStepStick) so the pin is free for UART.
+ *
+ *  Why switch chopper modes?
+ *  -------------------------
+ *  - StealthChop (voltage-mode PWM): practically silent and has no current
+ *    ripple, so a stationary motor does not "buzz/jitter" the camera.
+ *    It is less stiff and can lose steps under load or fast acceleration.
+ *  - SpreadCycle (current-mode chopper): strong, accurate torque at speed.
+ *  The mode is selected by the EN_SPREADCYCLE bit in the GCONF register
+ *  (1 = SpreadCycle, 0 = StealthChop; TPWMTHRS = 0 means StealthChop is not
+ *  limited by velocity). We write that bit only when the STEP output is idle
+ *  (hold) or about to start (move), so the chopper never changes mid-motion.
+ * ========================================================================== */
+#define TMC_SERIAL        Serial1    // Hardware UART on D0 (RX) / D1 (TX)
+#define TMC_BAUD          115200     // TMC2209 auto-detects the baud rate
+#define TMC_R_SENSE       0.11f      // Sense resistor in ohms (0.11 on most TMC2209 boards)
+
+// UART slave address of each driver (set by the MS1/MS2 pins, see above)
+#define PAN_TMC_ADDR      0
+#define TILT_TMC_ADDR     1
+#define ROLL_TMC_ADDR     2
+
+// Motor RMS currents in mA while moving. Tune to your motors (stay under the
+// motor's rated current and keep the driver cool).
+#define PAN_RUN_MA        800
+#define TILT_RUN_MA       800
+#define ROLL_RUN_MA       800
+// Fraction of the run current kept while holding (0.0 - 1.0). Less hold current
+// = less heat and less vibration, but less holding torque.
+#define TMC_HOLD_FRACTION 0.5f
+
+// How long the STEP output must be idle before we go to StealthChop. This lets
+// the rotor settle so the switch is not felt as a twitch.
+#define STEALTH_SETTLE_MS 150
+
+TMC2209Stepper panDriver (&TMC_SERIAL, TMC_R_SENSE, PAN_TMC_ADDR);
+TMC2209Stepper tiltDriver(&TMC_SERIAL, TMC_R_SENSE, TILT_TMC_ADDR);
+TMC2209Stepper rollDriver(&TMC_SERIAL, TMC_R_SENSE, ROLL_TMC_ADDR);
+
+enum ChopperMode { CHOPPER_UNKNOWN, CHOPPER_SPREAD, CHOPPER_STEALTH };
+
+struct TmcAxisState {
+  TMC2209Stepper* driver;
+  bool            online;       // true if the driver answered over UART at start-up
+  ChopperMode     mode;         // chopper mode we last wrote
+  unsigned long   idleSinceMs;  // when the STEP output last went idle
+};
+
+TmcAxisState tmcAxes[3] = {   // indexed by the Axis enum (PAN, TILT, ROLL)
+  { &panDriver,  false, CHOPPER_UNKNOWN, 0 },
+  { &tiltDriver, false, CHOPPER_UNKNOWN, 0 },
+  { &rollDriver, false, CHOPPER_UNKNOWN, 0 },
+};
+
+// Switch one driver between SpreadCycle and StealthChop. Does nothing if the
+// driver is already in that mode, so it is cheap to call repeatedly.
+void tmcSetChopperMode(Axis axis, ChopperMode mode) {
+  TmcAxisState &s = tmcAxes[axis];
+  if (!s.online || s.mode == mode) return;
+  // en_spreadCycle(true)  -> GCONF.en_spreadCycle = 1 -> SpreadCycle
+  // en_spreadCycle(false) -> GCONF.en_spreadCycle = 0 -> StealthChop
+  s.driver->en_spreadCycle(mode == CHOPPER_SPREAD);
+  s.mode = mode;
+}
+
+// Write the full register set for one driver and verify it replied.
+void tmcConfigureDriver(Axis axis, uint16_t runMilliamps, const char* name) {
+  TmcAxisState &s = tmcAxes[axis];
+  TMC2209Stepper &d = *s.driver;
+
+  d.begin();                    // Load library defaults for the cached registers
+
+  // test_connection(): 0 = OK, 1 = no reply (check wiring/address), 2 = bad reply
+  uint8_t result = d.test_connection();
+  Serial.print("TMC2209 "); Serial.print(name);
+  if (result != 0) {
+    Serial.print(" NOT responding (code "); Serial.print(result);
+    Serial.println("); continuing with STEP/DIR only, no chopper switching");
+    s.online = false;
+    return;
+  }
+  Serial.print(" OK, driver version 0x"); Serial.println(d.version(), HEX);
+  s.online = true;
+
+  // --- GCONF: global behaviour --------------------------------------------
+  d.pdn_disable(true);          // PDN_UART pin is used for UART, not power-down
+  d.mstep_reg_select(true);     // Take microsteps from the MRES register, not MS1/MS2
+  d.I_scale_analog(false);      // Use the internal reference, set current via UART
+  d.en_spreadCycle(false);      // Start in StealthChop (we begin in the "holding" state)
+  d.shaft(false);               // Direction is handled by the DIR pin, keep default
+
+  // --- Current and microstepping -------------------------------------------
+  d.rms_current(runMilliamps, TMC_HOLD_FRACTION); // IRUN = runMilliamps, IHOLD = fraction of it
+  d.iholddelay(8);              // Smoothly ramp from run to hold current (0..15, larger = slower)
+  d.TPOWERDOWN(20);             // Delay after standstill before IHOLD applies (units of 2^18 clocks, ~22 ms each)
+  d.microsteps(MICROSTEPS);     // Must match MICROSTEPS used for the speed maths above
+  d.intpol(true);               // Interpolate to 256 microsteps internally = much smoother motion
+
+  // --- SpreadCycle chopper (used while moving) -----------------------------
+  // Values follow the TMC2209 datasheet quick-start; they give quiet, smooth
+  // current regulation. Raise HEND slightly if you hear motor whine.
+  d.toff(3);                    // Off-time, must be > 0 to enable the driver output
+  d.blank_time(24);             // Comparator blank time (ns-ish cycles) - TBL
+  d.hysteresis_start(4);        // HSTRT
+  d.hysteresis_end(1);          // HEND
+
+  // --- StealthChop (used while holding) ------------------------------------
+  d.TPWMTHRS(0);                // 0 = no velocity threshold, StealthChop is controlled only by en_spreadCycle
+  d.pwm_autoscale(true);        // Automatically regulate PWM amplitude to the motor current
+  d.pwm_autograd(true);         // Automatically tune the PWM gradient
+  d.pwm_freq(1);                // ~35 kHz PWM frequency (above hearing range)
+  d.pwm_lim(12);                // Limit on amplitude jump when entering StealthChop (lower = less twitch)
+  d.pwm_reg(4);                 // Amplitude regulation speed (1..15, larger = faster)
+  d.freewheel(0);               // Hold the motor normally when IHOLD = 0
+
+  s.mode = CHOPPER_STEALTH;
+}
+
+void tmcSetup() {
+  TMC_SERIAL.begin(TMC_BAUD);
+  delay(100);                   // Let the drivers power up and sync to our baud rate
+  tmcConfigureDriver(PAN,  PAN_RUN_MA,  "pan");
+  tmcConfigureDriver(TILT, TILT_RUN_MA, "tilt");
+  tmcConfigureDriver(ROLL, ROLL_RUN_MA, "roll");
+}
+
+// True while the PWM slice is generating step pulses for this axis.
+bool stepOutputRunning(uint slice, uint chan) {
+  uint32_t cc = pwm_hw->slice[slice].cc;                 // Both channel levels are packed in CC
+  uint16_t level = (chan == PWM_CHAN_A) ? (cc & 0xFFFF) : (cc >> 16);
+  return level != 0;
+}
+
+// Call from loop(): once an axis has had no step pulses for STEALTH_SETTLE_MS,
+// switch it to StealthChop for quiet, jitter-free holding. (The switch to
+// SpreadCycle happens in setStepperSpeed(), right before motion begins.)
+void tmcUpdateHoldModes() {
+  static const uint* const slices[3] = { &PAN_SLICE, &TILT_SLICE, &ROLL_SLICE };
+  static const uint* const chans[3]  = { &PAN_CHAN,  &TILT_CHAN,  &ROLL_CHAN };
+  unsigned long now = millis();
+  for (int a = 0; a < 3; a++) {
+    TmcAxisState &s = tmcAxes[a];
+    if (!s.online) continue;
+    if (stepOutputRunning(*slices[a], *chans[a])) {
+      s.idleSinceMs = now;      // Still moving, restart the idle timer
+    } else if (s.mode != CHOPPER_STEALTH && now - s.idleSinceMs >= STEALTH_SETTLE_MS) {
+      tmcSetChopperMode((Axis)a, CHOPPER_STEALTH);
+    }
+  }
+}
+
 void setStepperSpeed(Axis axis, float deg_per_sec) {
   float gear_ratio = 1.0;
   switch(axis) {
@@ -161,6 +334,10 @@ void setStepperSpeed(Axis axis, float deg_per_sec) {
   if (wrap > 65535) wrap = 65535;           // Limit to 16-bit max wrap
 
   uint duty = wrap / 2;
+
+  // About to produce step pulses: make sure the driver is in SpreadCycle first.
+  // (No-op if already in SpreadCycle, so repeated speed updates cost nothing.)
+  tmcSetChopperMode(axis, CHOPPER_SPREAD);
 
   switch(axis){
     case PAN:
@@ -1211,6 +1388,9 @@ void setup() {
   pwm_set_enabled(TILT_SLICE, true);
   pwm_set_enabled(ROLL_SLICE, true);
 
+  // Configure the TMC2209 drivers over UART (currents, microsteps, chopper modes)
+  tmcSetup();
+
   //Fetch hostname from flash storage
   // If not set, use default based on MAC address
   char hostnameBuf[HOSTNAME_SIZE];
@@ -1254,6 +1434,7 @@ void setup() {
 
 
 void loop() {
+    tmcUpdateHoldModes(); // Drop idle axes into quiet StealthChop hold mode
     reconnectWiFi(); // Check and reconnect to WiFi if disconnected
     pollMDNS(); // Poll for mDNS queries
     handleUDPControl(); // Process incoming UDP control packets
